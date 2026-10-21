@@ -1,5 +1,5 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
-const axios = require('axios');
+import { Client, GatewayIntentBits, EmbedBuilder } from 'discord.js';
+import axios from 'axios';
 
 const client = new Client({
   intents: [
