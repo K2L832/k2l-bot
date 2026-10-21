@@ -1,152 +1,138 @@
-import axios from "axios";
-import { Client, EmbedBuilder, Events, GatewayIntentBits } from "discord.js";
-
-const token = process.env.DISCORD_TOKEN;
-const prefix = ",";
-const maxNamesPerCheck = 10;
-
-if (!token) {
-  throw new Error("Le secret DISCORD_TOKEN doit être configuré avant le démarrage.");
-}
+const { Client, GatewayIntentBits, EmbedBuilder } = require('discord.js');
+const axios = require('axios');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-  ],
+    GatewayIntentBits.MessageContent
+  ]
 });
 
-function validateUsernameFormat(input) {
-  const username = input.trim().toLowerCase();
-  const basicRulesMatch =
-    username.length >= 2 &&
-    username.length <= 32 &&
-    /^[a-z0-9._]+$/.test(username) &&
-    !username.startsWith(".") &&
-    !username.endsWith(".") &&
-    !username.includes("..");
+const TOKEN = process.env.DISCORD_TOKEN;
+const PREFIX = ',';
 
-  return { username, valid: basicRulesMatch };
-}
-
-function generateSuggestions(count = 5) {
-  const characters = "abcdefghijklmnopqrstuvwxyz0123456789";
-  const suggestions = new Set();
-
-  while (suggestions.size < count) {
-    let suggestion = "";
-    for (let index = 0; index < 4; index += 1) {
-      suggestion += characters[Math.floor(Math.random() * characters.length)];
-    }
-    suggestions.add(suggestion);
+async function checkUsername(username) {
+  const cleanName = username.trim().toLowerCase();
+  
+  if (cleanName.length < 2 || cleanName.length > 32) {
+    return { username: cleanName, available: false };
   }
-
-  return [...suggestions];
-}
-
-async function getBotIdentity() {
-  const response = await axios.get("https://discord.com/api/v10/users/@me", {
-    headers: { Authorization: `Bot ${token}` },
-    timeout: 10_000,
-  });
-
-  return response.data;
-}
-
-client.once(Events.ClientReady, (readyClient) => {
-  console.log(`Bot K2L connecté en tant que ${readyClient.user.tag}.`);
-});
-
-client.on(Events.MessageCreate, async (message) => {
-  if (message.author.bot || !message.inGuild() || !message.content.startsWith(prefix)) {
-    return;
-  }
-
-  const commandText = message.content.slice(prefix.length).trim();
-  const [command = "", ...rest] = commandText.split(/\s+/);
-  const rawInput = rest.join(" ").trim();
-  const reply = (content, embeds = []) =>
-    message.reply({
-      content,
-      embeds,
-      allowedMentions: { parse: [] },
-    });
 
   try {
-    if (command.toLowerCase() === "check") {
-      if (!rawInput) {
-        await reply("Utilisation : `,check pseudo1,pseudo2,pseudo3`");
-        return;
+    const response = await axios.post(
+      'https://discord.com/api/v10/users/@me/pomelo-attempt',
+      { username: cleanName },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        },
+        validateStatus: false
       }
-
-      const names = [...new Set(rawInput.split(",").map((name) => name.trim()).filter(Boolean))];
-      if (names.length === 0) {
-        await reply("Ajoute au moins un pseudo après la commande `,check`.");
-        return;
-      }
-      if (names.length > maxNamesPerCheck) {
-        await reply(`Tu peux vérifier le format de ${maxNamesPerCheck} pseudos maximum par commande.`);
-        return;
-      }
-
-      const results = names.map(validateUsernameFormat);
-      const lines = results.map(({ username, valid }) => {
-        const safeUsername = username.replace(/[\\`]/g, "\\$&");
-        return valid
-          ? `✅ \`${safeUsername}\` — format de base correct ; disponibilité non vérifiée.`
-          : `❌ \`${safeUsername}\` — format de base incorrect.`;
-      });
-
-      const embed = new EmbedBuilder()
-        .setTitle("Vérification du format")
-        .setDescription(lines.join("\n"))
-        .setColor(0x5865f2)
-        .setFooter({ text: "Un bot ne peut pas confirmer la disponibilité des pseudos." })
-        .setTimestamp();
-
-      await reply("", [embed]);
-      return;
-    }
-
-    if (command.toLowerCase() === "suggest") {
-      const suggestions = generateSuggestions();
-      const embed = new EmbedBuilder()
-        .setTitle("Idées de pseudos")
-        .setDescription(suggestions.map((name) => `• \`${name}\``).join("\n"))
-        .setColor(0x5865f2)
-        .setFooter({ text: "Suggestions générées automatiquement ; disponibilité non vérifiée." })
-        .setTimestamp();
-
-      await reply("", [embed]);
-      return;
-    }
-
-    if (command.toLowerCase() === "bot") {
-      try {
-        const identity = await getBotIdentity();
-        await reply(`Connecté à l’API Discord en tant que **${identity.username}** (ID : \`${identity.id}\`).`);
-      } catch {
-        await reply("Impossible de récupérer les informations du bot auprès de l’API officielle Discord.");
-      }
-      return;
-    }
-
-    await reply(
-      [
-        "**Commandes du bot K2L**",
-        "`,check pseudo1,pseudo2` — vérifie uniquement le format de base.",
-        "`,suggest` — génère des idées de pseudos non vérifiées.",
-        "`,bot` — affiche l’identité du bot via l’API officielle Discord.",
-      ].join("\n"),
     );
+
+    if (response.status === 429) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      return checkUsername(cleanName);
+    }
+
+    const isAvailable = response.data && response.data.taken === false;
+    return { username: cleanName, available: isAvailable };
+
   } catch (error) {
-    console.error("Erreur lors du traitement d’une commande Discord.");
-    await reply("Une erreur est survenue pendant le traitement de la commande.");
+    return { username: cleanName, available: false };
+  }
+}
+
+function generate4cCandidates(count = 10) {
+  const chars = 'abcdefghijklmnopqrstuvwxyz';
+  const digits = '0123456789';
+  const candidates = [];
+
+  for (let i = 0; i < count; i++) {
+    const type = Math.floor(Math.random() * 3);
+    let name = '';
+    
+    if (type === 0) {
+      name = chars[Math.floor(Math.random() * chars.length)] + '.' + 
+             chars[Math.floor(Math.random() * chars.length)] + 
+             digits[Math.floor(Math.random() * digits.length)];
+    } else if (type === 1) {
+      name = digits[Math.floor(Math.random() * digits.length)] + '.' + 
+             chars[Math.floor(Math.random() * chars.length)] + 
+             chars[Math.floor(Math.random() * chars.length)];
+    } else {
+      name = chars[Math.floor(Math.random() * chars.length)] + 
+             chars[Math.floor(Math.random() * chars.length)] + 
+             digits[Math.floor(Math.random() * digits.length)] + 
+             chars[Math.floor(Math.random() * chars.length)];
+    }
+    candidates.push(name);
+  }
+  return candidates;
+}
+
+client.on('messageCreate', async (message) => {
+  if (message.author.bot || !message.content.startsWith(PREFIX)) return;
+
+  const args = message.content.slice(PREFIX.length).trim();
+  const command = args.split(' ')[0].toLowerCase();
+  const rawInput = args.slice(command.length).trim();
+
+  if (command === 'check') {
+    if (!rawInput) {
+      return message.reply('❌ **Usage :** `,check pseudo1,pseudo2,pseudo3`');
+    }
+
+    const loadingMsg = await message.reply('⚡ **Vérification en cours...**');
+    const usernamesToCheck = rawInput.split(',').map(u => u.trim()).filter(u => u.length > 0);
+
+    const results = await Promise.all(usernamesToCheck.map(u => checkUsername(u)));
+    const availableUsernames = results.filter(r => r.available).map(r => r.username);
+
+    const embed = new EmbedBuilder()
+      .setTitle('🔍 Résultat de la vérification')
+      .setColor(availableUsernames.length > 0 ? 0x2ecc71 : 0xe74c3c)
+      .setTimestamp();
+
+    if (availableUsernames.length > 0) {
+      embed.setDescription(`🟢 **Pseudos DISPONIBLES trouvés (${availableUsernames.length}) :**\n\n` + 
+        availableUsernames.map(u => `• \`${u}\``).join('\n'));
+    } else {
+      let fallbackResults = [];
+      let attempts = 0;
+
+      while (fallbackResults.length < 5 && attempts < 3) {
+        const candidates = generate4cCandidates(10);
+        const checkedFallback = await Promise.all(candidates.map(u => checkUsername(u)));
+        const free = checkedFallback.filter(r => r.available).map(r => r.username);
+        
+        for (const name of free) {
+          if (!fallbackResults.includes(name) && fallbackResults.length < 5) {
+            fallbackResults.push(name);
+          }
+        }
+        attempts++;
+      }
+
+      let desc = `🔴 **Aucun des pseudos fournis n'est disponible.**\n\n`;
+      if (fallbackResults.length > 0) {
+        desc += `💡 **Voici 5 alternatives 4c actuellement LIBRES :**\n` + 
+                fallbackResults.map(u => `• \`${u}\``).join('\n');
+      } else {
+        desc += `⚠️ Rate limit atteint, réessaie plus tard.`;
+      }
+
+      embed.setDescription(desc);
+    }
+
+    await loadingMsg.edit({ content: ' ', embeds: [embed] });
   }
 });
 
-client.login(token).catch((error) => {
-  console.error("Connexion à Discord impossible. Vérifie le token et les intents du bot.");
-  process.exitCode = 1;
+client.once('ready', () => {
+  console.log(`✅ Bot K2L est en ligne !`);
 });
+
+client.login(TOKEN);
