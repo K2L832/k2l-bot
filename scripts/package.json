@@ -4,11 +4,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "discord-bot": "node ./src/index.js",
     "hello": "tsx ./src/hello.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
     "@types/node": "catalog:",
     "tsx": "catalog:"
+  },
+  "dependencies": {
+    "axios": "^1.20.0",
+    "discord.js": "^14.27.0"
   }
 }
