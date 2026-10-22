@@ -5,13 +5,13 @@ const fs = require('fs');
 const path = require('path');
 
 // ==========================================
-// 1. SERVEUR WEB 24/7 (SANS VEILLE RENDER)
+// 1. SERVEUR WEB 24/7 (RENDER)
 // ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  res.send('⚡ K2L System Pro Max Online & Ready 24/7');
+  res.send('⚡ K2L System Online & Ready 24/7');
 });
 
 app.listen(PORT, () => {
@@ -19,7 +19,7 @@ app.listen(PORT, () => {
 });
 
 // ==========================================
-// 2. BASE DE DONNÉES JSON (STABLE & DURABLE)
+// 2. BASE DE DONNÉES JSON PERSISTANTE
 // ==========================================
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
@@ -59,9 +59,7 @@ const client = new Client({
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 
-// Routes API multiples pour contourner les filtres de Render
-const API_URL_PRIMARY = 'https://discord.com/api/v9/users/pomelo/attempt';
-const API_URL_SECONDARY = 'https://discord.com/api/v9/users/@me/pomelo-suggest';
+let autoTask = null; // Gestionnaire de la boucle ,auto
 let isGenerating = false;
 
 const letters = 'abcdefghijklmnopqrstuvwxyz';
@@ -80,55 +78,54 @@ function generateRandomUsername(length) {
   return result;
 }
 
-// ------------------------------------------
-// MÉTHODE DE VÉRIFICATION PRO MAX (DOUBLE DÉTENTE)
-// ------------------------------------------
+// Vérification ciblée sur la case Discord d'InstantUsername avec secours Pomelo
 async function checkUsername(username) {
-  const token = BOT_TOKEN.startsWith('Bot ') ? BOT_TOKEN : `Bot ${BOT_TOKEN}`;
-  
-  // Headers ultra-sophistiqués simulant une application Discord Desktop native
-  const headers = {
-    'Authorization': token,
-    'Content-Type': 'application/json',
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9015 Chrome/120.0.6099.291 Electron/28.2.5 Safari/537.36',
-    'X-Super-Properties': 'eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiY2hyb21lX2VsZWN0cm9uIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLVVTIiwiYnJvd3Nlcl91c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgTlQgMTAuMDsgV2luNjQ7IHg2NCkgQXBwbGVXZWJLaXQvNTM3LjM2IChLSFRNTCwgbGlrZSBHZWNvKSBkaXNjb3JkLzEuMC45MDE1IENocm9tZS8xMjAuMC42MDk5LjI5MSBFbGVjdHJvbi8yOC4yLjUgU2FmYXJpLzUzNy4zNiIsImJyb3dzZXJfdmVyc2lvbiI6IjI4LjIuNSJ9',
-    'X-Discord-Locale': 'fr'
-  };
-
   try {
-    // Tentative 1 : Route Pomelo Attempt principale
-    const response = await axios.post(
-      API_URL_PRIMARY,
-      { username },
-      { headers, timeout: 4000 }
-    );
+    // Test direct avec les paramètres de l'API InstantUsername (service discord / discorde)
+    const response = await axios.get(`https://instantusername.com/api/check?username=${username}&service=discord`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      },
+      timeout: 5000
+    });
     
-    if (response.data && typeof response.data.taken !== 'undefined') {
-      return response.data.taken === false;
+    if (response.data && typeof response.data.available !== 'undefined') {
+      return response.data.available === true;
     }
+    
+    // Test secondaire avec l'alias 'discorde' visible sur l'interface mobile
+    const responseAlt = await axios.get(`https://instantusername.com/api/check?username=${username}&service=discorde`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json'
+      },
+      timeout: 5000
+    });
+
+    if (responseAlt.data && typeof responseAlt.data.available !== 'undefined') {
+      return responseAlt.data.available === true;
+    }
+
+    return false;
   } catch (err) {
-    // Si la route principale bloque, on passe à la méthode secondaire de validation croisée
     try {
-      const altResponse = await axios.get(
-        `https://discord.com/api/v9/users?name=${encodeURIComponent(username)}`,
-        { headers, timeout: 4000 }
-      );
-      // Si l'API ne retourne aucun utilisateur avec ce nom exact, il est très probable qu'il soit libre
-      return !altResponse.data || altResponse.data.length === 0;
-    } catch (secErr) {
-      // En cas de doute absolu sur les rate limits de l'hébergeur, on applique un filtre intelligent de structure
+      const fallback = await axios.post('https://discord.com/api/v9/users/pomelo/attempt', { username }, {
+        headers: { 'Authorization': BOT_TOKEN.startsWith('Bot ') ? BOT_TOKEN : `Bot ${BOT_TOKEN}` }
+      });
+      return fallback.data && fallback.data.taken === false;
+    } catch (e) {
       return false;
     }
   }
-  return false;
 }
 
 // ==========================================
 // 4. ÉVÉNEMENT READY
 // ==========================================
 client.once('ready', () => {
-  console.log(`👑 K2L Bot Pro Max connecté avec succès en tant que : ${client.user.tag}`);
-  client.user.setActivity(`${db.prefix}help | K2L System Pro Max 👑`, { type: 0 });
+  console.log(`👑 K2L Bot connecté avec succès en tant que : ${client.user.tag}`);
+  client.user.setActivity(`${db.prefix}help | K2L System`, { type: 0 });
 });
 
 // ==========================================
@@ -146,16 +143,18 @@ client.on('messageCreate', async (message) => {
   if (command === 'help') {
     const helpEmbed = new EmbedBuilder()
       .setColor('#2b2d31')
-      .setTitle('👑 K2L SYSTEM PRO MAX — PANNEAU DE COMMANDES')
-      .setDescription(`Préfixe actuel : \`${db.prefix}\` • Statut : **En Ligne 24/7 (Pro Max Engine)** ⚡`)
+      .setTitle('👑 K2L SYSTEM — PANNEAU DE COMMANDES')
+      .setDescription(`Préfixe actuel : \`${db.prefix}\` • Statut : **En Ligne 24/7** ⚡`)
       .addFields(
         {
-          name: '🎯 **Outils Pseudos Discord**',
+          name: '🎯 **Outils Pseudos & Automatisation**',
           value: 
-            `\`${db.prefix}gen <taille>\` — Cherche et teste des pseudos en direct (Moteur Pro Max)\n` +
-            `\`${db.prefix}check <pseudo>\` — Analyse approfondie de la disponibilité d'un pseudo\n` +
+            `\`${db.prefix}auto <taille>\` — Lance le scanner automatique en arrière-plan\n` +
+            `\`${db.prefix}auto off\` — Stoppe le scanner automatique\n` +
+            `\`${db.prefix}gen <taille>\` — Cherche et teste des pseudos en direct\n` +
+            `\`${db.prefix}check <pseudo>\` — Analyse la disponibilité d'un pseudo précis\n` +
             `\`${db.prefix}suggest <taille>\` — Génère 5 idées de pseudos aléatoires\n` +
-            `\`${db.prefix}lookup\` — Affiche l'historique des pseudos disponibles dénichés`
+            `\`${db.prefix}lookup\` — Affiche les derniers pseudos disponibles dénichés`
         },
         {
           name: '⚙️ **Administration & Modération**',
@@ -172,7 +171,7 @@ client.on('messageCreate', async (message) => {
         }
       )
       .setThumbnail(client.user.displayAvatarURL())
-      .setFooter({ text: 'K2L System • Version Pro Max Infaillible', iconURL: client.user.displayAvatarURL() })
+      .setFooter({ text: 'K2L System • Édition Intégrale 24/7', iconURL: client.user.displayAvatarURL() })
       .setTimestamp();
 
     return message.reply({ embeds: [helpEmbed] });
@@ -199,7 +198,7 @@ client.on('messageCreate', async (message) => {
 
     db.prefix = newPrefix;
     saveData(db);
-    client.user.setActivity(`${db.prefix}help | K2L System Pro Max 👑`, { type: 0 });
+    client.user.setActivity(`${db.prefix}help | K2L System`, { type: 0 });
 
     const successEmbed = new EmbedBuilder()
       .setColor('#57F287')
@@ -239,6 +238,70 @@ client.on('messageCreate', async (message) => {
   }
 
   // ------------------------------------------
+  // COMMANDE : AUTO (AUTOMATISATION EN ARRIÈRE-PLAN)
+  // ------------------------------------------
+  if (command === 'auto') {
+    const sub = args[0];
+
+    if (sub === 'off') {
+      if (!autoTask) {
+        const warnEmbed = new EmbedBuilder()
+          .setColor('#FEE75C')
+          .setDescription('⚠️ Aucun scanner automatique n\'est actuellement en cours.');
+        return message.reply({ embeds: [warnEmbed] });
+      }
+      clearInterval(autoTask);
+      autoTask = null;
+      const stopEmbed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setDescription('🛑 **Scanner automatique arrêté avec succès.**');
+      return message.reply({ embeds: [stopEmbed] });
+    }
+
+    const length = parseInt(sub);
+    if (isNaN(length) || length < 2 || length > 32) {
+      const warnEmbed = new EmbedBuilder()
+        .setColor('#FEE75C')
+        .setDescription(`⚠️ **Usage :** \`${db.prefix}auto <taille>\` (entre 2 et 32) ou \`${db.prefix}auto off\``);
+      return message.reply({ embeds: [warnEmbed] });
+    }
+
+    if (autoTask) {
+      const warnEmbed = new EmbedBuilder()
+        .setColor('#FEE75C')
+        .setDescription('⚠️ Un scanner automatique tourne déjà ! Fais d\'abord `,auto off`.');
+      return message.reply({ embeds: [warnEmbed] });
+    }
+
+    const startEmbed = new EmbedBuilder()
+      .setColor('#5865F2')
+      .setTitle('🚀 Scanner Automatique Activé')
+      .setDescription(`Recherche en boucle de pseudos de **${length}** caractères en arrière-plan sur Discord...\n*Le bot t'enverra une alerte dès qu'un pseudo libre est trouvé !*`);
+    
+    message.reply({ embeds: [startEmbed] });
+
+    autoTask = setInterval(async () => {
+      const candidate = generateRandomUsername(length);
+      const isAvailable = await checkUsername(candidate);
+
+      if (isAvailable) {
+        db.foundUsernames.unshift({ name: candidate, date: new Date().toLocaleString('fr-FR') });
+        if (db.foundUsernames.length > 20) db.foundUsernames.pop();
+        saveData(db);
+
+        const alertEmbed = new EmbedBuilder()
+          .setColor('#57F287')
+          .setTitle('🚨 PSEUDO DISCORD DISPONIBLE TROUVÉ !')
+          .setDescription(`🎉 **Pseudo libre :** \`${candidate}\`\n\n*Détecté automatiquement par le scanner sur la case Discord !*`)
+          .setFooter({ text: 'K2L Auto Scanner • Discord Check' })
+          .setTimestamp();
+
+        message.channel.send({ content: `<@${message.author.id}>`, embeds: [alertEmbed] });
+      }
+    }, 4000);
+  }
+
+  // ------------------------------------------
   // COMMANDE : CHECK
   // ------------------------------------------
   if (command === 'check') {
@@ -252,7 +315,7 @@ client.on('messageCreate', async (message) => {
 
     const loadingEmbed = new EmbedBuilder()
       .setColor('#5865F2')
-      .setDescription(`🔍 **Analyse Pro Max en cours :** Interrogation approfondie des serveurs Discord pour \`${target}\`...`);
+      .setDescription(`🔍 **Analyse en cours :** Vérification du pseudo \`${target}\` sur la case Discord...`);
 
     const msg = await message.reply({ embeds: [loadingEmbed] });
     const isAvailable = await checkUsername(target);
@@ -261,15 +324,15 @@ client.on('messageCreate', async (message) => {
       const resultEmbed = new EmbedBuilder()
         .setColor('#57F287')
         .setTitle('🎉 Pseudo Disponible !')
-        .setDescription(`Le pseudo \`${target}\` est **libre d'utilisation** sur Discord !`)
-        .setFooter({ text: 'K2L System • Pro Max Engine' });
+        .setDescription(`Le pseudo \`${target}\` est **disponible** sur Discord !`)
+        .setFooter({ text: 'K2L System • Discord Checker' });
       return msg.edit({ embeds: [resultEmbed] });
     } else {
       const resultEmbed = new EmbedBuilder()
         .setColor('#ED4245')
         .setTitle('❌ Pseudo Indisponible')
-        .setDescription(`Le pseudo \`${target}\` est **déjà pris** ou restreint par Discord.`)
-        .setFooter({ text: 'K2L System • Pro Max Engine' });
+        .setDescription(`Le pseudo \`${target}\` est **déjà pris** sur Discord.`)
+        .setFooter({ text: 'K2L System • Discord Checker' });
       return msg.edit({ embeds: [resultEmbed] });
     }
   }
@@ -297,8 +360,8 @@ client.on('messageCreate', async (message) => {
 
     const startEmbed = new EmbedBuilder()
       .setColor('#5865F2')
-      .setTitle('🚀 Génération & Scan Pro Max en Direct')
-      .setDescription(`Recherche active d'un pseudo libre de **${length}** caractères...\n*Utilisation du moteur de contournement intelligent.*`);
+      .setTitle('🚀 Génération & Scan en Direct')
+      .setDescription(`Recherche d'un pseudo libre de **${length}** caractères sur Discord...`);
 
     const statusMsg = await message.reply({ embeds: [startEmbed] });
 
@@ -317,7 +380,7 @@ client.on('messageCreate', async (message) => {
         saveData(db);
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 900));
+      await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
     isGenerating = false;
@@ -325,15 +388,15 @@ client.on('messageCreate', async (message) => {
     if (found) {
       const successEmbed = new EmbedBuilder()
         .setColor('#57F287')
-        .setTitle('👑 PSEUDO VALIDE TROUVÉ (PRO MAX) !')
-        .setDescription(`🎉 **Pseudo disponible :** \`${found}\`\n\n*Essais effectués :* \`${attempts}\`\n*Enregistré dans l'historique JSON !*`)
-        .setFooter({ text: 'K2L Generator • Pro Max Engine' });
+        .setTitle('👑 PSEUDO VALIDE TROUVÉ !')
+        .setDescription(`🎉 **Pseudo disponible :** \`${found}\`\n\n*Essais effectués :* \`${attempts}\``)
+        .setFooter({ text: 'K2L Generator' });
       return statusMsg.edit({ embeds: [successEmbed] });
     } else {
       const failEmbed = new EmbedBuilder()
         .setColor('#ED4245')
-        .setTitle('❌ Aucun Pseudo Libéré')
-        .setDescription(`Après **${attempts}** essais, aucun pseudo disponible de **${length}** caractères n'a été trouvé.\n\n💡 *Relance la commande pour tenter une nouvelle session !*`);
+        .setTitle('❌ Aucun Pseudo Trouvé')
+        .setDescription(`Après **${attempts}** essais, aucun pseudo disponible de **${length}** caractères n'a été trouvé.`);
       return statusMsg.edit({ embeds: [failEmbed] });
     }
   }
@@ -350,9 +413,9 @@ client.on('messageCreate', async (message) => {
 
     const suggestEmbed = new EmbedBuilder()
       .setColor('#FEE75C')
-      .setTitle(`💡 Suggestions Pro Max (${length} car.)`)
+      .setTitle(`💡 Suggestions de Pseudos (${length} car.)`)
       .setDescription(suggestions.map((s, idx) => `**${idx + 1}.** \`${s}\``).join('\n'))
-      .setFooter({ text: 'Utilise check pour valider leur disponibilité exacte !' });
+      .setFooter({ text: 'Utilise check pour tester leur disponibilité.' });
 
     return message.reply({ embeds: [suggestEmbed] });
   }
@@ -369,12 +432,12 @@ client.on('messageCreate', async (message) => {
     }
 
     const list = db.foundUsernames
-      .map((item, idx) => `\`${idx + 1}.\` **\`${item.name}\`** — *Trouvé le ${item.date || 'Récemment'}*`)
+      .map((item, idx) => `\`${idx + 1}.\` **\`${item.name}\`** — *Trouvé le ${item.date}*`)
       .join('\n');
 
     const lookupEmbed = new EmbedBuilder()
       .setColor('#5865F2')
-      .setTitle('📜 Historique Pro Max des Pseudos Trouvés')
+      .setTitle('📜 Historique des Pseudos Valides Trouvés')
       .setDescription(list)
       .setFooter({ text: `Total sauvegardé : ${db.foundUsernames.length}` });
 
@@ -402,7 +465,7 @@ client.on('messageCreate', async (message) => {
         { name: '👑 Nom du Bot', value: `\`${client.user.tag}\``, inline: true },
         { name: '🌐 Serveurs', value: `\`${client.guilds.cache.size}\``, inline: true },
         { name: '👥 Utilisateurs', value: `\`${client.users.cache.size}\``, inline: true },
-        { name: '⚡ Système', value: '`Node.js v24 • Render Pro Max 24/7`', inline: false }
+        { name: '⚡ Système', value: '`Node.js • Render Cloud 24/7`', inline: false }
       )
       .setThumbnail(client.user.displayAvatarURL());
     return message.reply({ embeds: [infoEmbed] });
