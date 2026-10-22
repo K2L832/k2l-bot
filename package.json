@@ -1,20 +1,14 @@
 {
-  "name": "workspace",
-  "version": "0.0.0",
-  "license": "MIT",
-  "scripts": {
-    "preinstall": "sh -c 'rm -f package-lock.json yarn.lock; case \"$npm_config_user_agent\" in pnpm/*) ;; *) echo \"Use pnpm instead\" >&2; exit 1 ;; esac'",
-    "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
-  },
+  "name": "k2l-bot",
+  "version": "1.0.0",
   "private": true,
-  "dependencies": {
-    "@replit/connectors-sdk": "^0.4.3",
-    "express": "^5.2.1"
+  "scripts": {
+    "start": "node scripts/src/index.cjs"
   },
-  "devDependencies": {
-    "prettier": "^3.9.6",
-    "typescript": "~5.9.3"
+  "dependencies": {
+    "axios": "^1.7.9",
+    "better-sqlite3": "^11.8.1",
+    "discord.js": "^14.17.3",
+    "express": "^4.21.1"
   }
 }
