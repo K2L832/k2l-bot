@@ -59,7 +59,7 @@ const client = new Client({
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 
-// API Discord Pomelo pour la vérification exacte en temps réel
+// API de test de pseudos
 const API_URL = 'https://discord.com/api/v9/users/pomelo/attempt';
 let isGenerating = false;
 
@@ -79,7 +79,7 @@ function generateRandomUsername(length) {
   return result;
 }
 
-// Vérification robuste en temps réel alignée sur l'application officielle
+// Fonction de vérification ultra-sécurisée avec headers imitant un client réel
 async function checkUsername(username) {
   try {
     const response = await axios.post(
@@ -88,16 +88,17 @@ async function checkUsername(username) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bot ${BOT_TOKEN}`
-        }
+          'Authorization': BOT_TOKEN.startsWith('Bot ') ? BOT_TOKEN : `Bot ${BOT_TOKEN}`,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'X-Super-Properties': 'eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiQ2hyb21lIiwiZGV2aWNlIjoiIiwic3lzdGVtX2xvY2FsZSI6ImVuLVVTIiwiYnJvd3Nlc191c2VyX2FnZW50IjoiTW96aWxsYS81LjAgKFdpbmRvd3MgNTIgVzY0OyB4NjQpIEFwcGxlV2ViS2l0LzUzNy4zNiAoS0hUTUwsIGxpa2UgR2VjbykgQ2hyb21lLzEyMC4wLjAuMCBTYWZhcmkvNTM3LjM2IiwiYnJvd3Nlc192ZXJzaW9uIjoiMTIwLjAuMC4wIn0='
+        },
+        timeout: 5000
       }
     );
-    // Si taken est explicitement false, le pseudo est libre
     return response.data && response.data.taken === false;
   } catch (error) {
-    // Si l'API renvoie une erreur de validation ou de rate limit, on gère proprement
+    // Si l'API bloque avec un statut 401 ou 429, on analyse le message de retour si possible
     if (error.response && error.response.data) {
-      // Parfois Discord renvoie taken: true ou un objet d'erreur
       return error.response.data.taken === false;
     }
     return false;
