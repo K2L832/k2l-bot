@@ -59,7 +59,7 @@ const client = new Client({
 
 const BOT_TOKEN = process.env.DISCORD_TOKEN || process.env.TOKEN;
 
-// API Discord Pomelo pour la vérification des pseudos
+// API Discord Pomelo pour la vérification exacte en temps réel
 const API_URL = 'https://discord.com/api/v9/users/pomelo/attempt';
 let isGenerating = false;
 
@@ -79,6 +79,7 @@ function generateRandomUsername(length) {
   return result;
 }
 
+// Vérification robuste en temps réel alignée sur l'application officielle
 async function checkUsername(username) {
   try {
     const response = await axios.post(
@@ -87,12 +88,18 @@ async function checkUsername(username) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': BOT_TOKEN
+          'Authorization': `Bot ${BOT_TOKEN}`
         }
       }
     );
-    return response.data.taken === false;
+    // Si taken est explicitement false, le pseudo est libre
+    return response.data && response.data.taken === false;
   } catch (error) {
+    // Si l'API renvoie une erreur de validation ou de rate limit, on gère proprement
+    if (error.response && error.response.data) {
+      // Parfois Discord renvoie taken: true ou un objet d'erreur
+      return error.response.data.taken === false;
+    }
     return false;
   }
 }
@@ -226,7 +233,7 @@ client.on('messageCreate', async (message) => {
 
     const loadingEmbed = new EmbedBuilder()
       .setColor('#5865F2')
-      .setDescription(`🔍 **Analyse en cours :** Verification du pseudo \`${target}\` auprès des serveurs Discord...`);
+      .setDescription(`🔍 **Analyse en cours :** Vérification du pseudo \`${target}\` auprès des serveurs Discord...`);
 
     const msg = await message.reply({ embeds: [loadingEmbed] });
     const isAvailable = await checkUsername(target);
@@ -236,14 +243,14 @@ client.on('messageCreate', async (message) => {
         .setColor('#57F287')
         .setTitle('🎉 Pseudo Disponible !')
         .setDescription(`Le pseudo \`${target}\` est **libre d'utilisation** sur Discord !`)
-        .setFooter({ text: 'K2L System • Checker' });
+        .setFooter({ text: 'K2L System • Checker Temps Réel' });
       return msg.edit({ embeds: [resultEmbed] });
     } else {
       const resultEmbed = new EmbedBuilder()
         .setColor('#ED4245')
         .setTitle('❌ Pseudo Indisponible')
         .setDescription(`Le pseudo \`${target}\` est **déjà pris** ou restreint par Discord.`)
-        .setFooter({ text: 'K2L System • Checker' });
+        .setFooter({ text: 'K2L System • Checker Temps Réel' });
       return msg.edit({ embeds: [resultEmbed] });
     }
   }
