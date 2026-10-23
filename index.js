@@ -465,4 +465,166 @@ client.on('messageCreate', async (message) => {
                 stats.running = false;
             }
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-            re
+            re             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
+            return message.reply('🛑 **Scanner automatique arrêté.**');
+        }
+
+        const length = parseInt(subAction);
+        if (!length || isNaN(length) || length < 2 || length > 32) {
+            return message.reply('❌ **Utilisation :** `,auto <longueur (2-32)>` ou `,auto off`');
+        }
+
+        if (autoTask) clearInterval(autoTask);
+
+        stats.running = true;
+        stats.length = length;
+        stats.checked = 0;
+        stats.available = 0;
+        stats.failed = 0;
+        stats.startTime = Date.now();
+        stats.recentChecks = [];
+
+        await message.reply(`🚀 **Live Scanner démarré** pour des pseudos de **${length}** caractères !`);
+        liveMessage = await message.channel.send(buildMainDashboard());
+
+        // BOUCLE D'ANALYSE TEMPS RÉEL (TOUTES LES 2 SECONDES)
+        autoTask = setInterval(async () => {
+            const candidate = generateUsername(length);
+            stats.checked++;
+
+            const isAvailable = await checkUsernameOnSite(candidate);
+            let statusText = 'Taken';
+            if (isAvailable === true) statusText = 'Available';
+            if (isAvailable === null) statusText = 'Error';
+
+            stats.recentChecks.unshift({ username: candidate, status: statusText });
+            if (stats.recentChecks.length > 8) stats.recentChecks.pop();
+
+            if (isAvailable === true) {
+                stats.available++;
+                stats.lastHit = candidate;
+
+                const db = loadDatabase();
+                if (!db.savedUsernames.some(i => i.username === candidate)) {
+                    db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
+                    saveDatabase(db);
+                }
+
+                const alertEmbed = new EmbedBuilder()
+                    .setTitle('🎉 PÉPITE DISPONIBLE DÉTECTÉE !')
+                    .setDescription(`✨ Pseudo libre : \`${candidate}\``)
+                    .setColor('#2ECC71')
+                    .setTimestamp();
+
+                await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE TROUVÉE !**`, embeds: [alertEmbed] });
+            }
+
+            // Rafraîchissement direct de l'embed
+            if (liveMessage) {
+                liveMessage.edit(buildMainDashboard()).catch(() => {});
+            }
+        }, 2000);
+
+        return;
+    }
+
+    // Commande CHECK
+    if (command === 'check') {
+        const target = args[0]?.toLowerCase();
+        if (!target) return message.reply('❌ Exemple : `,check pseudo123`');
+
+        const loading = await message.reply(`🔍 Test de \`${target}\` en cours...`);
+        const isAvailable = await checkUsernameOnSite(target);
+
+        if (isAvailable === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **DISPONIBLE** !`);
+        if (isAvailable === false) return loading.edit(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS**.`);
+        return loading.edit(`⚠️ Erreur d'accès à l'API.`);
+    }
+
+    // Commande LOOKUP
+    if (command === 'lookup') {
+        const db = loadDatabase();
+        if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite enregistrée pour l\'instant.');
+        
+        const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` *(trouvé le ${new Date(i.timestamp).toLocaleDateString()})*`).join('\n');
+        
+        const embed = new EmbedBuilder()
+            .setTitle('📂 Pépites Registrées dans la Base')
+            .setDescription(list)
+            .setColor('#3498DB');
+
+        return message.reply({ embeds: [embed] });
+    }
+
+    // COMMANDES DE MODÉRATION
+    if (command === 'clear') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply("❌ Permission requise : `Gérer les messages`.");
+        const count = parseInt(args[0]);
+        if (!count || count < 1 || count > 100) return message.reply("❌ Indique un nombre entre 1 et 100.");
+        
+        await message.channel.bulkDelete(count + 1, true).catch(() => {});
+        const msg = await message.channel.send(`🧹 **${count}** messages supprimés.`);
+        setTimeout(() => msg.delete().catch(() => {}), 3000);
+    }
+
+    if (command === 'antiraid') {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("❌ Permission Administrateur requise.");
+        
+        const sub = args[0]?.toLowerCase();
+        if (sub === 'on') antiRaidActive = true;
+        else if (sub === 'off') antiRaidActive = false;
+        else return message.reply("❌ Usage : `,antiraid on` ou `,antiraid off`");
+
+        return message.reply(`🛡️ Anti-Raid : **${antiRaidActive ? 'ACTIVÉ 🟢' : 'DÉSACTIVÉ 🔴'}**`);
+    }
+
+    if (command === 'kick') {
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply("❌ Permission requise : `Expulser des membres`.");
+        const member = message.mentions.members.first();
+        if (!member) return message.reply("❌ Mentionne le membre à expulser.");
+        
+        try {
+            await member.kick();
+            message.reply(`✅ **${member.user.tag}** a été expulsé.`);
+        } catch (e) {
+            message.reply(`❌ Erreur : ${e.message}`);
+        }
+    }
+
+    if (command === 'ban') {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise : `Bannir des membres`.");
+        const member = message.mentions.members.first();
+        if (!member) return message.reply("❌ Mentionne le membre à bannir.");
+        
+        try {
+            await member.ban();
+            message.reply(`✅ **${member.user.tag}** a été banni.`);
+        } catch (e) {
+            message.reply(`❌ Erreur : ${e.message}`);
+        }
+    }
+
+    if (command === 'lock') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise : `Gérer les salons`.");
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
+        return message.reply("🔒 Salon verrouillé.");
+    }
+
+    if (command === 'unlock') {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise : `Gérer les salons`.");
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
+        return message.reply("🔓 Salon déverrouillé.");
+    }
+});
+
+// ==========================================
+// 9. LANCEMENT DU BOT
+// ==========================================
+const TOKEN = process.env.DISCORD_TOKEN;
+if (!TOKEN) {
+    console.error("❌ DISCORD_TOKEN n'est pas défini dans l'environnement !");
+    process.exit(1);
+}
+
+client.login(TOKEN);
+
