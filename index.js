@@ -9,8 +9,7 @@ const {
     ModalBuilder, 
     TextInputBuilder, 
     TextInputStyle, 
-    PermissionFlagsBits,
-    ChannelType
+    PermissionFlagsBits 
 } = require('discord.js');
 const axios = require('axios');
 const express = require('express');
@@ -18,26 +17,40 @@ const fs = require('fs');
 const path = require('path');
 
 // ==========================================
-// 1. SERVEUR WEB EXPRESS (RENDER KEEP-ALIVE)
+// 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 // ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
     res.status(200).send(`
-        <html>
-            <head><title>K2L Munky Live Checker</title></head>
-            <body style="font-family: sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px;">
-                <h1>🐒 K2L Munky Live Checker is ONLINE</h1>
-                <p>Status: Running 24/7 on Render</p>
+        <!DOCTYPE html>
+        <html lang="fr">
+            <head>
+                <meta charset="UTF-8">
+                <title>K2L Munky Live Checker</title>
+                <style>
+                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px; }
+                    .card { background: #1a1a24; display: inline-block; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+                    h1 { color: #5865F2; margin-bottom: 10px; }
+                    p { color: #b9bbbe; font-size: 1.1em; }
+                    .status { display: inline-block; padding: 6px 12px; background: #2ecc71; color: #fff; border-radius: 20px; font-weight: bold; margin-top: 15px; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>🐒 K2L Munky Live Checker</h1>
+                    <p>Système d'analyse de pseudos OG Discord en temps réel</p>
+                    <div class="status">🟢 ONLINE 24/7 ON RENDER</div>
+                </div>
             </body>
         </html>
     `);
 });
 
-// Important : Écoute explicite sur 0.0.0.0 pour Render
+// Écoute obligatoire sur 0.0.0.0 pour les conteneurs Cloud comme Render
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 [EXPRESS] Serveur Web Keep-Alive actif sur le port ${PORT}`);
+    console.log(`🌐 [EXPRESS] Serveur Web Keep-Alive actif sur http://0.0.0.0:${PORT}`);
 });
 
 // ==========================================
@@ -56,7 +69,7 @@ const client = new Client({
 const PREFIX = ',';
 
 // ==========================================
-// 3. GESTION DE LA BASE DE DONNÉES LOCALE
+// 3. BASE DE DONNÉES LOCALE PERSISTANTE (JSON)
 // ==========================================
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
@@ -70,7 +83,7 @@ function loadDatabase() {
         const data = fs.readFileSync(DB_FILE, 'utf8');
         return JSON.parse(data);
     } catch (e) {
-        console.error('⚠️ Erreur lecture BDD, réinitialisation temporaire :', e.message);
+        console.error('⚠️ [BDD] Erreur de lecture, réinitialisation temporaire :', e.message);
         return { savedUsernames: [], settings: { antiRaid: false }, logs: [] };
     }
 }
@@ -79,15 +92,15 @@ function saveDatabase(data) {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
     } catch (e) {
-        console.error('❌ Erreur écriture BDD :', e.message);
+        console.error('❌ [BDD] Erreur d\'écriture :', e.message);
     }
 }
 
 // ==========================================
-// 4. ÉTAT GLOBAL ET TÉLÉMÉTRIE LIVE
+// 4. ÉTAT GLOBAL & TÉLÉMÉTRIE DU SCANNER
 // ==========================================
 let autoTask = null;
-let liveMessage = null; // Référence vers l'embed Discord qui s'actualise en direct
+let liveMessage = null; // Message Discord mis à jour automatiquement
 let antiRaidActive = false;
 
 let stats = {
@@ -97,7 +110,7 @@ let stats = {
     available: 0,
     failed: 0,
     startTime: null,
-    recentChecks: [], // Garde les 6 derniers pseudos testés
+    recentChecks: [], // Stocke les 8 derniers pseudos testés en direct
     lastHit: 'Aucun'
 };
 
@@ -111,11 +124,11 @@ function generateUsername(length) {
     return result;
 }
 
-// Requête directe vers l'API d'InstantUsername
+// Vérification auprès de l'API InstantUsername
 async function checkUsernameOnSite(username) {
     try {
         const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
-            timeout: 6000,
+            timeout: 5000,
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
@@ -130,40 +143,41 @@ async function checkUsernameOnSite(username) {
         return false;
     } catch (err) {
         stats.failed++;
-        return null; // Null indique une erreur de réseau ou de timeout
+        return null;
     }
 }
 
 // ==========================================
-// 5. CONSTRUCTEUR DU DASHBOARD DYNAMIQUE
+// 5. CONSTRUCTEUR DE L'EMBED DASHBOARD ULTRA-CLEAN
 // ==========================================
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
 
-    // Formatage de la liste de télémesure en temps réel
+    // Formatage du flux en direct avec icônes
     let liveLogText = stats.recentChecks.length > 0 
         ? stats.recentChecks.map(item => {
             let icon = '🔴';
-            if (item.status === 'Available') icon = '🟢';
-            if (item.status === 'Error') icon = '⚠️';
-            return `${icon} \`${item.username}\` ── **${item.status}**`;
+            let label = 'Pris / Indisponible';
+            if (item.status === 'Available') { icon = '🟢'; label = 'DISPONIBLE / LIBRE !'; }
+            if (item.status === 'Error') { icon = '⚠️'; label = 'Erreur Réseau/API'; }
+            return `${icon} \`${item.username}\` ── **${label}**`;
         }).join('\n')
-        : '`[Attente du lancement du scan...]`';
+        : '`[Scan en attente de lancement...]`';
 
     const db = loadDatabase();
 
     const embed = new EmbedBuilder()
         .setTitle('🐒 MUNKY CHECKER - K2L Live Dashboard')
-        .setDescription('**Système de vérification & scan de pseudos OG en temps réel**')
+        .setDescription('**Système de surveillance & scan de pseudos OG en temps réel**')
         .addFields(
             { 
                 name: '📊 Métriques Live', 
-                value: `• **CHECKED** : \`${stats.checked}\` | **AVAILABLE** : \`${stats.available}\` | **ERRORS** : \`${stats.failed}\`\n• **VITESSE** : \`${speed} req/s\` | **TAILLE** : \`${stats.length} car.\`\n• **STATUT** : ${stats.running ? '🟢 **SCAN EN COURS**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
+                value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Trouvées** : \`${stats.available}\`\n• **Erreurs API** : \`${stats.failed}\`\n• **Vitesse de Scan** : \`${speed} req/s\`\n• **Taille Choisie** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS EN TEMPS RÉEL**' : '🔴 **INACTIF**'}\n• **Dernier Hit** : \`${stats.lastHit}\``, 
                 inline: false 
             },
             {
-                name: '📡 Flux en direct (Dernières requêtes instantusername.com)',
+                name: '📡 Flux en direct (Actualisé en continu)',
                 value: liveLogText,
                 inline: false
             },
@@ -173,29 +187,29 @@ function buildMainDashboard() {
                 inline: true
             },
             {
-                name: '🛡️ Protection',
+                name: '🛡️ Sécurité',
                 value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`,
                 inline: true
             }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L Live System • Direct InstantUsername API Connection' })
+        .setFooter({ text: 'K2L Live System • Connecté à InstantUsername API' })
         .setTimestamp();
 
-    // Menu déroulant par catégories
+    // Menu de sélection déroulant par catégories
     const selectMenu = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('menu_category')
-            .setPlaceholder('📂 Choisir une catégorie d\'options...')
+            .setPlaceholder('📂 Sélectionner une catégorie d\'options...')
             .addOptions([
-                { label: '🔍 Live Checker & Scan', description: 'Gérer le scan et le flux en direct', value: 'cat_scan', emoji: '🔍' },
-                { label: '📂 Base de Données / Hits', description: 'Voir la liste des pseudos trouvés et enregistrés', value: 'cat_hits', emoji: '📁' },
-                { label: '🛡️ Modération & Sécurité', description: 'Anti-raid, purge, kick, ban, lock/unlock', value: 'cat_mod', emoji: '🛡️' },
-                { label: '📊 Télémetrie Système', description: 'Statistiques avancées du serveur et du bot', value: 'cat_sys', emoji: '📊' }
+                { label: '🔍 Live Checker & Scan', description: 'Gérer et surveiller le scan en direct', value: 'cat_scan', emoji: '🔍' },
+                { label: '📂 Base de Données / Hits', description: 'Consulter tous les pseudos sauvegardés', value: 'cat_hits', emoji: '📁' },
+                { label: '🛡️ Modération & Sécurité', description: 'Commandes de sécurité et nettoyage', value: 'cat_mod', emoji: '🛡️' },
+                { label: '📊 Télémetrie Système', description: 'Performances du serveur et du bot', value: 'cat_sys', emoji: '📊' }
             ])
     );
 
-    // Boutons de contrôle rapide
+    // Boutons de contrôle interactifs
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(stats.running ? 'btn_stop_scan' : 'btn_start_scan')
@@ -214,35 +228,32 @@ function buildMainDashboard() {
     return { embeds: [embed], components: [selectMenu, buttons] };
 }
 
-// Événement Démarrage du Bot
+// Bot prêt
 client.once('ready', () => {
-    console.log(`✅ [DISCORD] Bot connecté avec succès sous le nom : ${client.user.tag}`);
-    client.user.setActivity('OG Usernames | ,help', { type: 3 }); // Watching
+    console.log(`✅ [DISCORD] Bot connecté : ${client.user.tag}`);
+    client.user.setActivity('Pseudos OG | ,help', { type: 3 });
 });
 
 // ==========================================
-// 6. SÉCURITÉ ANTI-RAID
+// 6. SYSTÈME ANTI-RAID
 // ==========================================
 client.on('guildMemberAdd', async (member) => {
     if (!antiRaidActive) return;
-    
-    // Détecte les comptes créés il y a moins de 3 jours
     const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
     if (accountAgeDays < 3) {
         try {
-            await member.send(`⚠️ Tu as été expulsé de **${member.guild.name}** car le mode Anti-Raid est actif et ton compte est trop récent.`);
+            await member.send(`⚠️ Tu as été expulsé de **${member.guild.name}** car le mode Anti-Raid est actif (Compte < 3 jours).`);
         } catch (e) {}
         try {
-            await member.kick('Mode Anti-Raid actif : Compte trop récent (< 3 jours).');
-            console.log(`🛡️ [ANTI-RAID] Membre expulsé : ${member.user.tag}`);
+            await member.kick('Mode Anti-Raid : Compte trop récents (< 3 jours).');
         } catch (e) {
-            console.error(`❌ Erreur expulsion Anti-Raid :`, e.message);
+            console.error('Erreur expulsion Anti-Raid :', e.message);
         }
     }
 });
 
 // ==========================================
-// 7. GESTION DES INTERACTIONS (BOUTONS, MENUS, MODALS)
+// 7. GESTION DES INTERACTIONS (BOUTONS / MENUS / MODALS)
 // ==========================================
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -252,8 +263,8 @@ client.on('interactionCreate', async (interaction) => {
 
             if (val === 'cat_scan') {
                 const embed = new EmbedBuilder()
-                    .setTitle('🔍 Mode Scanner en direct')
-                    .setDescription('• Cliquez sur **🚀 Lancer Live Scan** pour ouvrir un formulaire et définir la taille des pseudos à scanner en boucle.\n• Cliquez sur **🔍 Check 1 Pseudo** pour tester un nom d\'utilisateur immédiatement.')
+                    .setTitle('🔍 Contrôle du Scanner')
+                    .setDescription('• **🚀 Lancer Live Scan** : Démarre la recherche automatique.\n• **🔍 Check 1 Pseudo** : Teste un nom d\'utilisateur précis.\n• **🛑 Arrêter le Scan** : Stoppe la boucle en cours.')
                     .setColor('#3498DB');
                 return interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -261,11 +272,11 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'cat_hits') {
                 const db = loadDatabase();
                 const list = db.savedUsernames.length > 0 
-                    ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` ── *(enregistré le ${new Date(i.timestamp).toLocaleDateString()} à ${new Date(i.timestamp).toLocaleTimeString()})*`).join('\n')
-                    : 'Aucun pseudo disponible sauvegardé pour le moment.';
+                    ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` ── *(détecté le ${new Date(i.timestamp).toLocaleDateString()} à ${new Date(i.timestamp).toLocaleTimeString()})*`).join('\n')
+                    : 'Aucun pseudo enregistré dans la base de données pour le moment.';
 
                 const embed = new EmbedBuilder()
-                    .setTitle('📂 Base de Données - Pépites Détectées')
+                    .setTitle('📂 Base de Données - Pépites Sauvées')
                     .setDescription(list)
                     .setColor('#F1C40F');
                 return interaction.reply({ embeds: [embed], ephemeral: true });
@@ -273,8 +284,8 @@ client.on('interactionCreate', async (interaction) => {
 
             if (val === 'cat_mod') {
                 const embed = new EmbedBuilder()
-                    .setTitle('🛡️ Panneau de Modération')
-                    .setDescription('Commandes d\'administration à saisir dans le tchat :\n\n• `,antiraid <on/off>` : Active ou désactive l\'éjection des comptes récents.\n• `,clear <1-100>` : Supprime un paquet de messages.\n• `,kick <@membre>` : Expulse un membre.\n• `,ban <@membre>` : Bannit un membre.\n• `,lock` / `,unlock` : Verrouille ou déverrouille le salon actuel.')
+                    .setTitle('🛡️ Commandes de Modération')
+                    .setDescription('• `,antiraid <on/off>` : Active/désactive l\'expulsion automatique.\n• `,clear <1-100>` : Supprime des messages dans le salon.\n• `,kick <@membre>` : Expulse un utilisateur.\n• `,ban <@membre>` : Bannit un utilisateur.\n• `,lock` / `,unlock` : Verrouille ou déverrouille le salon.')
                     .setColor('#E74C3C');
                 return interaction.reply({ embeds: [embed], ephemeral: true });
             }
@@ -282,13 +293,12 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'cat_sys') {
                 const uptime = Math.floor(client.uptime / 1000);
                 const embed = new EmbedBuilder()
-                    .setTitle('📊 Télémetrie & Performances')
+                    .setTitle('📊 Télémetrie Système')
                     .addFields(
-                        { name: 'Uptime Bot', value: `\`${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s\``, inline: true },
+                        { name: 'Uptime', value: `\`${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s\``, inline: true },
                         { name: 'Total Scannés', value: `\`${stats.checked}\``, inline: true },
-                        { name: 'Hits Réussis', value: `\`${stats.available}\``, inline: true },
-                        { name: 'Erreurs API Network', value: `\`${stats.failed}\``, inline: true },
-                        { name: 'Serveurs', value: `\`${client.guilds.cache.size}\``, inline: true },
+                        { name: 'Pépites Trouvées', value: `\`${stats.available}\``, inline: true },
+                        { name: 'Erreurs API', value: `\`${stats.failed}\``, inline: true },
                         { name: 'RAM Utilisée', value: `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\``, inline: true }
                     )
                     .setColor('#9B59B6');
@@ -305,13 +315,13 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId === 'btn_check_modal') {
                 const modal = new ModalBuilder()
                     .setCustomId('modal_check_single')
-                    .setTitle('Check rapide de pseudo');
+                    .setTitle('Check Rapide de Pseudo');
 
                 const input = new TextInputBuilder()
                     .setCustomId('input_username')
-                    .setLabel('Entrez le pseudo à vérifier :')
+                    .setLabel('Pseudo à vérifier :')
                     .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('Exemple: k2l_master')
+                    .setPlaceholder('Exemple: dark_master')
                     .setRequired(true)
                     .setMaxLength(32);
 
@@ -322,7 +332,7 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId === 'btn_start_scan') {
                 const modal = new ModalBuilder()
                     .setCustomId('modal_start_scan')
-                    .setTitle('Démarrer le Live Scanner');
+                    .setTitle('Démarrer le Scanner Live');
 
                 const input = new TextInputBuilder()
                     .setCustomId('input_length')
@@ -346,7 +356,7 @@ client.on('interactionCreate', async (interaction) => {
             }
         }
 
-        // C. SOUMISSION DES MODALS (FORMULAIRES)
+        // C. SOUMISSION DES FORMULAIRES (MODALS)
         if (interaction.isModalSubmit()) {
             if (interaction.customId === 'modal_check_single') {
                 const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
@@ -355,18 +365,18 @@ client.on('interactionCreate', async (interaction) => {
                 const isAvailable = await checkUsernameOnSite(target);
 
                 if (isAvailable === true) {
-                    return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE / DISCORD OG** !`);
+                    return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE / OG DISCORD** !`);
                 } else if (isAvailable === false) {
                     return interaction.editReply(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS**.`);
                 } else {
-                    return interaction.editReply(`⚠️ Impossible de vérifier \`${target}\` pour le moment (Erreur réseau/API).`);
+                    return interaction.editReply(`⚠️ Impossible de vérifier \`${target}\` (Erreur d'accès à l'API).`);
                 }
             }
 
             if (interaction.customId === 'modal_start_scan') {
                 const len = parseInt(interaction.fields.getTextInputValue('input_length'));
                 if (!len || isNaN(len) || len < 2 || len > 32) {
-                    return interaction.reply({ content: '❌ Longueur invalide ! Choisissez un chiffre entre 2 et 32.', ephemeral: true });
+                    return interaction.reply({ content: '❌ Longueur invalide ! Choisissez entre 2 et 32.', ephemeral: true });
                 }
 
                 if (autoTask) clearInterval(autoTask);
@@ -379,11 +389,11 @@ client.on('interactionCreate', async (interaction) => {
                 stats.startTime = Date.now();
                 stats.recentChecks = [];
 
-                await interaction.reply({ content: `🚀 Scanner Live lancé pour des pseudos de **${len}** caractères !`, ephemeral: true });
+                await interaction.reply({ content: `🚀 Live Scanner démarré pour des pseudos de **${len}** caractères !`, ephemeral: true });
 
-                // Création du message qui servira de Dashboard dynamique mis à jour en direct
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
+                // SCANNE ET MET À JOUR LE MESSAGE TOUTES LES 2 SECONDES !
                 autoTask = setInterval(async () => {
                     const candidate = generateUsername(len);
                     stats.checked++;
@@ -393,11 +403,11 @@ client.on('interactionCreate', async (interaction) => {
                     if (isAvailable === true) statusText = 'Available';
                     if (isAvailable === null) statusText = 'Error';
 
-                    // Met à jour la pile des 6 derniers pseudos testés
+                    // Empile le dernier résultat en haut
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
-                    if (stats.recentChecks.length > 6) stats.recentChecks.pop();
+                    if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
-                    // Si une pépite est trouvée !
+                    // Si on trouve un pseudo libre !
                     if (isAvailable === true) {
                         stats.available++;
                         stats.lastHit = candidate;
@@ -410,22 +420,22 @@ client.on('interactionCreate', async (interaction) => {
 
                         const alertEmbed = new EmbedBuilder()
                             .setTitle('🎉 PÉPITE OG DISPONIBLE DÉTECTÉE !')
-                            .setDescription(`Un pseudo libre a été trouvé en direct !\n\n✨ Pseudo : \`${candidate}\``)
+                            .setDescription(`Un pseudo libre a été identifié en direct !\n\n✨ Pseudo : \`${candidate}\``)
                             .setColor('#2ECC71')
                             .setTimestamp();
 
-                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **HIT DÉTECTÉ !**`, embeds: [alertEmbed] });
+                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **HIT DÉTECTÉ EN DIRECT !**`, embeds: [alertEmbed] });
                     }
 
-                    // Mise à jour continue de l'embed principal
+                    // Édition continue de l'embed principal
                     if (liveMessage) {
                         liveMessage.edit(buildMainDashboard()).catch(() => {});
                     }
-                }, 3500); // Exécution toutes les 3.5 secondes pour respecter les limites de rate-limit
+                }, 2000);
             }
         }
     } catch (err) {
-        console.error('❌ Erreur lors du traitement d\'une interaction :', err);
+        console.error('❌ Erreur interaction :', err);
     }
 });
 
@@ -438,13 +448,13 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // Commande HELP / PANEL / DASHBOARD
+    // Commandes HELP / PANEL / DASHBOARD
     if (command === 'help' || command === 'panel' || command === 'dashboard') {
         liveMessage = await message.reply(buildMainDashboard());
         return;
     }
 
-    // Commande AUTO (Lancement direct en mode texte)
+    // Commande AUTO (Exemple: ,auto 4)
     if (command === 'auto') {
         const subAction = args[0]?.toLowerCase();
 
@@ -455,12 +465,4 @@ client.on('messageCreate', async (message) => {
                 stats.running = false;
             }
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-            return message.reply('🛑 **Scanner automatique arrêté avec succès.**');
-        }
-
-        const length = parseInt(subAction);
-        if (!length || isNaN(length) || length < 2 || length > 32) {
-            return message.reply('❌ **Usage correct :** `,auto <longueur (2-32)>` ou `,auto off`');
-        }
-
-        if (autoTask) clearInterv
+            re
