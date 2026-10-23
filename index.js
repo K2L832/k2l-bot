@@ -15,7 +15,6 @@ const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const https = require('https');
 
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 const app = express();
@@ -85,13 +84,7 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. AGENT HTTPS & HEADERS DISCORD LÉGITIMES
-const customHttpsAgent = new https.Agent({
-    keepAlive: true,
-    rejectUnauthorized: false
-});
-
-// 5. ÉTAT GLOBAL
+// 4. ÉTAT GLOBAL
 let autoTask = null;
 let liveMessage = null;
 let antiRaidActive = false;
@@ -125,39 +118,20 @@ function generateUsername(length) {
     return result;
 }
 
-// VÉRIFICATION VIA L'API OFFICIELLE AVEC FINGERPRINTING DISCORD
+// VÉRIFICATION VIA RELAIS PROXY CORS POUR ÉVITER LES BLOCAGES DE RENDER
 async function checkUsernameOnDiscord(username) {
-    const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-    
-    // Génération des propriétés de super-client pour éviter le blocage Cloudflare/API
-    const superProperties = Buffer.from(JSON.stringify({
-        os: "Windows",
-        browser: "Chrome",
-        device: "",
-        system_locale: "fr-FR",
-        browser_user_agent: userAgent,
-        browser_version: "124.0.0.0",
-        os_version: "10",
-        release_channel: "stable",
-        client_build_number: 284459,
-        client_event_source: null
-    })).toString('base64');
-
     try {
-        const response = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
+        // Utilisation d'un relais proxy gratuit pour contourner le blocage IP de Render
+        const targetUrl = `https://discord.com/api/v9/unique-username/username-attempt-unauthed`;
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+
+        const response = await axios.post(proxyUrl, 
             { username: username },
             {
-                timeout: 5000,
-                httpsAgent: customHttpsAgent,
+                timeout: 6000,
                 headers: {
                     'Content-Type': 'application/json',
-                    'User-Agent': userAgent,
-                    'Accept': '*/*',
-                    'Accept-Language': 'fr-FR,fr;q=0.9',
-                    'Origin': 'https://discord.com',
-                    'Referer': 'https://discord.com/',
-                    'X-Super-Properties': superProperties,
-                    'X-Discord-Locale': 'fr'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
                 }
             }
         );
@@ -173,16 +147,12 @@ async function checkUsernameOnDiscord(username) {
         stats.taken++;
         return false;
     } catch (err) {
-        if (err.response && err.response.data && err.response.data.taken === true) {
-            stats.taken++;
-            return false;
-        }
         stats.failed++;
         return 'RATELIMIT';
     }
 }
 
-// 6. TABLEAU DE BORD EMBED EN FRANÇAIS
+// 5. TABLEAU DE BORD EMBED EN FRANÇAIS
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -384,7 +354,7 @@ client.on('messageCreate', async (message) => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // COMMANDE HELP : Affiche la liste complète des commandes en français
+    // COMMANDE HELP : Affiche la liste complète de toutes les commandes
     if (command === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setTitle('📖 LISTE DES COMMANDES - K2L BOT')
