@@ -15,7 +15,7 @@ const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const https = require('https');
 
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 const app = express();
@@ -85,41 +85,16 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. MOTEUR DE PROXIES
-let proxyList = [];
-let currentProxyIndex = 0;
-
-async function fetchFreeProxies() {
-    try {
-        const res = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all');
-        if (res.data) {
-            const raw = res.data.split('\r\n').filter(p => p.trim() !== '');
-            if (raw.length > 0) {
-                proxyList = raw;
-            }
-        }
-    } catch (err) {}
-}
-
-function getNextProxyAgent() {
-    if (proxyList.length === 0) return null;
-    const proxyUrl = `http://${proxyList[currentProxyIndex]}`;
-    currentProxyIndex = (currentProxyIndex + 1) % proxyList.length;
-    try {
-        return new HttpsProxyAgent(proxyUrl);
-    } catch (e) {
-        return null;
-    }
-}
-
-fetchFreeProxies();
-setInterval(fetchFreeProxies, 15 * 60 * 1000);
+// 4. AGENT HTTPS NATIVE (SANS DÉPENDANCE EXTERNE)
+const customHttpsAgent = new https.Agent({
+    keepAlive: true,
+    rejectUnauthorized: false
+});
 
 // 5. ÉTAT GLOBAL
 let autoTask = null;
 let liveMessage = null;
 let antiRaidActive = false;
-let systemLogs = [];
 
 let stats = {
     running: false,
@@ -150,31 +125,24 @@ function generateUsername(length) {
     return result;
 }
 
-async function checkUsernameWithProxy(username) {
+async function checkUsernameOnDiscord(username) {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15'
     ];
-    const agent = getNextProxyAgent();
-
-    const config = {
-        timeout: 4000,
-        headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
-            'Accept': 'application/json'
-        }
-    };
-
-    if (agent) {
-        config.httpsAgent = agent;
-        config.httpAgent = agent;
-    }
 
     try {
         const response = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
             { username: username },
-            config
+            {
+                timeout: 5000,
+                httpsAgent: customHttpsAgent,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+                    'Accept': 'application/json'
+                }
+            }
         );
 
         if (response.data && typeof response.data.taken !== 'undefined') {
@@ -188,22 +156,16 @@ async function checkUsernameWithProxy(username) {
         stats.taken++;
         return false;
     } catch (err) {
-        try {
-            const fallbackResponse = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
-                { username: username },
-                { timeout: 3000 }
-            );
-            if (fallbackResponse.data && fallbackResponse.data.taken === false) return true;
+        if (err.response && err.response.data && err.response.data.taken === true) {
             stats.taken++;
             return false;
-        } catch (e) {
-            stats.failed++;
-            return 'RATELIMIT';
         }
+        stats.failed++;
+        return 'RATELIMIT';
     }
 }
 
-// 6. DASHBOARD EMBED ULTRA CLEAN (DESIGN SOBRE ET PRO)
+// 6. DASHBOARD EMBED ULTRA CLEAN
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -310,7 +272,7 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'cat_sys') {
                 const uptime = Math.floor(process.uptime() / 60);
                 const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                return interaction.reply({ content: `\`\`\`yaml\nUptime:  ${uptime} min\nRAM:     ${mem} MB\nProxies: ${proxyList.length}\n\`\`\``, ephemeral: true });
+                return interaction.reply({ content: `\`\`\`yaml\nUptime:  ${uptime} min\nRAM:     ${mem} MB\n\`\`\``, ephemeral: true });
             }
         }
 
@@ -338,7 +300,7 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId === 'modal_check_single') {
                 const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
                 await interaction.deferReply({ ephemeral: true });
-                const res = await checkUsernameWithProxy(target);
+                const res = await checkUsernameOnDiscord(target);
                 if (res === true) return interaction.editReply(`🟢 \`${target}\` est **AVAILABLE** !`);
                 return interaction.editReply(`🔴 \`${target}\` est **TAKEN**.`);
             }
@@ -360,12 +322,12 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.reply({ content: `🚀 Scanner démarré pour **${len}** caractères.`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
-                const runProxyLoop = async () => {
+                const runLoop = async () => {
                     if (!stats.running) return;
 
                     const candidate = generateUsername(len);
                     stats.checked++;
-                    const res = await checkUsernameWithProxy(candidate);
+                    const res = await checkUsernameOnDiscord(candidate);
                     
                     let statusText = 'Taken';
                     if (res === true) statusText = 'Available';
@@ -387,11 +349,11 @@ client.on('interactionCreate', async (interaction) => {
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    const delay = Math.floor(Math.random() * 2000) + 2500;
-                    autoTask = setTimeout(runProxyLoop, delay);
+                    const delay = Math.floor(Math.random() * 3000) + 5000;
+                    autoTask = setTimeout(runLoop, delay);
                 };
 
-                runProxyLoop();
+                runLoop();
             }
         }
     } catch (err) {
@@ -435,12 +397,12 @@ client.on('messageCreate', async (message) => {
         await message.reply(`🚀 **Scanner démarré** (${length} caractères).`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
-        const runProxyLoopMsg = async () => {
+        const runLoopMsg = async () => {
             if (!stats.running) return;
 
             const candidate = generateUsername(length);
             stats.checked++;
-            const res = await checkUsernameWithProxy(candidate);
+            const res = await checkUsernameOnDiscord(candidate);
             
             let statusText = 'Taken';
             if (res === true) statusText = 'Available';
@@ -462,11 +424,11 @@ client.on('messageCreate', async (message) => {
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const delay = Math.floor(Math.random() * 2000) + 2500;
-            autoTask = setTimeout(runProxyLoopMsg, delay);
+            const delay = Math.floor(Math.random() * 3000) + 5000;
+            autoTask = setTimeout(runLoopMsg, delay);
         };
 
-        runProxyLoopMsg();
+        runLoopMsg();
         return;
     }
 
@@ -474,7 +436,7 @@ client.on('messageCreate', async (message) => {
         const target = args[0]?.toLowerCase();
         if (!target) return message.reply('❌ Usage : `,check pseudo`');
         const loading = await message.reply(`🔍 Verification...`);
-        const res = await checkUsernameWithProxy(target);
+        const res = await checkUsernameOnDiscord(target);
         if (res === true) return loading.edit(`🟢 \`${target}\` est **AVAILABLE** !`);
         return loading.edit(`🔴 \`${target}\` est **TAKEN**.`);
     }
