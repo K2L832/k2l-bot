@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
         <html lang="fr">
             <head>
                 <meta charset="UTF-8">
-                <title>K2L Munky Live Checker</title>
+                <title>K2L Live Checker</title>
                 <style>
                     body { font-family: sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px; }
                     .card { background: #1a1a24; display: inline-block; padding: 30px; border-radius: 12px; }
@@ -36,8 +36,8 @@ app.get('/', (req, res) => {
             </head>
             <body>
                 <div class="card">
-                    <h1>🐒 K2L Munky Live Checker</h1>
-                    <p>Scan de pseudos OG Discord en temps réel</p>
+                    <h1>💎 K2L Live Checker</h1>
+                    <p>Scan exclusif de pseudos OG Discord en temps réel</p>
                     <div class="status">🟢 ONLINE 24/7 ON RENDER</div>
                 </div>
             </body>
@@ -109,43 +109,39 @@ function generateUsername(length) {
     return result;
 }
 
-// CHECKER CIBLÉ 100% DISCORD DE INSTANTUSERNAME
+// CHECKER ANTI-RATE-LIMIT CIBLÉ DISCORD SUR INSTANTUSERNAME
 async function checkUsernameOnSite(username) {
+    const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+    ];
+    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+
     try {
-        // Interrogation directe de l'API InstantUsername SPÉCIFIQUEMENT pour le service Discord
-        const targetUrl = `https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`;
-        
-        // On passe par un bypass d'en-tête pour contourner le blocage Cloud Render
-        const response = await axios.get(targetUrl, {
-            timeout: 5000,
+        const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
+            timeout: 6000,
             headers: { 
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
+                'User-Agent': randomUA,
                 'Accept': 'application/json, text/plain, */*',
                 'Referer': 'https://instantusername.com/',
-                'Origin': 'https://instantusername.com'
+                'Origin': 'https://instantusername.com',
+                'Sec-Fetch-Site': 'same-origin',
+                'Sec-Fetch-Mode': 'cors'
             }
         });
 
         if (response.data && typeof response.data.available !== 'undefined') {
-            // Renvoie true UNIQUEMENT si la case Discord est déclarée disponible
             return response.data.available === true;
         }
         return false;
     } catch (err) {
-        // En cas de rate-limit Render, fallback dynamique sur API externe dédiée Discord
-        try {
-            const alt = await axios.get(`https://corsproxy.io/?${encodeURIComponent(`https://instantusername.com/api/check?username=${username}&service=discord`)}`, { timeout: 4000 });
-            if (alt.data && typeof alt.data.available !== 'undefined') {
-                return alt.data.available === true;
-            }
-        } catch (e) {}
-        
         stats.failed++;
         return null;
     }
 }
 
-// 5. DASHBOARD EMBED CLEAN
+// 5. DASHBOARD EMBED
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -163,12 +159,12 @@ function buildMainDashboard() {
     const db = loadDatabase();
 
     const embed = new EmbedBuilder()
-        .setTitle('🐒 MUNKY CHECKER - K2L Live Dashboard')
+        .setTitle('💎 K2L LIVE CHECKER - Dashboard')
         .setDescription('**Scan exclusif de pseudos OG DISCORD en temps réel**')
         .addFields(
             { 
                 name: '📊 Métriques Live', 
-                value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Discord** : \`${stats.available}\`\n• **Erreurs Network** : \`${stats.failed}\`\n• **Vitesse de Scan** : \`${speed} req/s\`\n• **Taille** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
+                value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Discord** : \`${stats.available}\`\n• **Erreurs / Rate-Limit** : \`${stats.failed}\`\n• **Vitesse de Scan** : \`${speed} req/s\`\n• **Taille** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
                 inline: false 
             },
             { name: '📡 Flux en direct (Vérification Discord)', value: liveLogText, inline: false },
@@ -176,7 +172,7 @@ function buildMainDashboard() {
             { name: '🛡️ Sécurité', value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`, inline: true }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L Live System • Cible exclusive : Discord Username Case' })
+        .setFooter({ text: 'K2L System • InstantUsername API Anti-RateLimit' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -221,18 +217,18 @@ client.on('guildMemberAdd', async (member) => {
         try { await member.kick('Mode Anti-Raid : Compte trop récent (< 3 jours).'); } catch (e) {}
     }
 });
-client.on('interactionCreate', async (interaction) => {
+                                                             client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
             const val = interaction.values[0];
             if (val === 'cat_scan') {
-                return interaction.reply({ content: '• Cliquez sur **🚀 Lancer Live Scan** pour démarrer la recherche Discord.', ephemeral: true });
+                return interaction.reply({ content: '• Cliquez sur **🚀 Lancer Live Scan** pour démarrer.', ephemeral: true });
             }
             if (val === 'cat_hits') {
                 const db = loadDatabase();
                 const list = db.savedUsernames.length > 0 
                     ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n')
-                    : 'Aucun pseudo Discord disponible enregistré.';
+                    : 'Aucun pseudo enregistré.';
                 return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord').setDescription(list).setColor('#F1C40F')], ephemeral: true });
             }
             if (val === 'cat_mod') {
@@ -254,7 +250,7 @@ client.on('interactionCreate', async (interaction) => {
             }
 
             if (interaction.customId === 'btn_start_scan') {
-                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Démarrer Scanner Discord');
+                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Démarrer Scanner');
                 const input = new TextInputBuilder().setCustomId('input_length').setLabel('Longueur (2-32) :').setStyle(TextInputStyle.Short).setValue('4').setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
@@ -271,9 +267,9 @@ client.on('interactionCreate', async (interaction) => {
                 const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
                 await interaction.deferReply({ ephemeral: true });
                 const isAvailable = await checkUsernameOnSite(target);
-                if (isAvailable === true) return interaction.editReply(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE SUR DISCORD** !`);
+                if (isAvailable === true) return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE SUR DISCORD** !`);
                 if (isAvailable === false) return interaction.editReply(`❌ Le pseudo \`${target}\` est **PRIS SUR DISCORD**.`);
-                return interaction.editReply(`⚠️ Erreur d'accès/Rate limit API.`);
+                return interaction.editReply(`⚠️ Rate-Limit / Erreur de l'API.`);
             }
 
             if (interaction.customId === 'modal_start_scan') {
@@ -289,9 +285,10 @@ client.on('interactionCreate', async (interaction) => {
                 stats.startTime = Date.now();
                 stats.recentChecks = [];
 
-                await interaction.reply({ content: `🚀 Scanner Discord lancé pour des pseudos de **${len}** caractères !`, ephemeral: true });
+                await interaction.reply({ content: `🚀 Scanner lancé pour **${len}** caractères !`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
+                // Cadence à 4.5 secondes pour esquiver les rate-limits du site
                 autoTask = setInterval(async () => {
                     const candidate = generateUsername(len);
                     stats.checked++;
@@ -301,7 +298,6 @@ client.on('interactionCreate', async (interaction) => {
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
                     if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
-                    // PING SEULEMENT QUAND 100% DISPONIBLE SUR DISCORD !
                     if (isAvailable === true) {
                         stats.available++;
                         stats.lastHit = candidate;
@@ -314,7 +310,7 @@ client.on('interactionCreate', async (interaction) => {
                     }
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-                }, 3000); // 3 secondes pour ne pas surcharger l'API Discord de InstantUsername
+                }, 4500);
             }
         }
     } catch (err) {
@@ -354,9 +350,10 @@ client.on('messageCreate', async (message) => {
         stats.startTime = Date.now();
         stats.recentChecks = [];
 
-        await message.reply(`🚀 **Live Scanner Discord démarré** pour **${length}** caractères !`);
+        await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères !`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
+        // Cadence à 4.5 secondes pour esquiver les rate-limits
         autoTask = setInterval(async () => {
             const candidate = generateUsername(length);
             stats.checked++;
@@ -366,7 +363,6 @@ client.on('messageCreate', async (message) => {
             stats.recentChecks.unshift({ username: candidate, status: statusText });
             if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
-            // PING UNIQUEMENT SI VRAIMENT DISPO DISCORD !
             if (isAvailable === true) {
                 stats.available++;
                 stats.lastHit = candidate;
@@ -379,7 +375,7 @@ client.on('messageCreate', async (message) => {
             }
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-        }, 3000);
+        }, 4500);
 
         return;
     }
@@ -389,14 +385,14 @@ client.on('messageCreate', async (message) => {
         if (!target) return message.reply('❌ Exemple : `,check pseudo123`');
         const loading = await message.reply(`🔍 Test Discord de \`${target}\`...`);
         const isAvailable = await checkUsernameOnSite(target);
-        if (isAvailable === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE SUR DISCORD** !`);
+        if (isAvailable === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **DISPONIBLE SUR DISCORD** !`);
         if (isAvailable === false) return loading.edit(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS SUR DISCORD**.`);
-        return loading.edit(`⚠️ Erreur d'accès à l'API.`);
+        return loading.edit(`⚠️ Rate-Limit de l'API.`);
     }
 
     if (command === 'lookup') {
         const db = loadDatabase();
-        if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite Discord.');
+        if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite.');
         const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n');
         return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord Registrées').setDescription(list).setColor('#3498DB')] });
     }
@@ -425,7 +421,7 @@ client.on('messageCreate', async (message) => {
     if (command === 'ban') {
         if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise.");
         const member = message.mentions.members.first();
-        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`); }
+        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`);
     }
 
     if (command === 'lock') {
