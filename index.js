@@ -15,6 +15,7 @@ const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 const app = express();
@@ -26,19 +27,20 @@ app.get('/', (req, res) => {
         <html lang="fr">
             <head>
                 <meta charset="UTF-8">
-                <title>K2L Pro Checker Engine</title>
+                <title>K2L Checker Engine</title>
                 <style>
-                    body { font-family: sans-serif; background: #0c0e12; color: #fff; text-align: center; padding-top: 50px; }
-                    .card { background: #161922; display: inline-block; padding: 30px; border-radius: 12px; border: 1px solid #2E6DB4; }
-                    h1 { color: #4A90E2; }
-                    .status { padding: 6px 12px; background: #2ecc71; color: #fff; border-radius: 20px; font-weight: bold; }
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #090a0f; color: #e1e7ed; text-align: center; padding-top: 60px; }
+                    .card { background: #12151e; display: inline-block; padding: 32px; border-radius: 10px; border: 1px solid #1f2638; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+                    h1 { color: #5865F2; margin-bottom: 8px; font-size: 24px; }
+                    p { color: #8a96a3; font-size: 14px; margin-bottom: 20px; }
+                    .status { display: inline-block; padding: 6px 14px; background: #2ecc711a; border: 1px solid #2ecc71; color: #2ecc71; border-radius: 20px; font-size: 12px; font-weight: 600; }
                 </style>
             </head>
             <body>
                 <div class="card">
-                    <h1>⚡ K2L Pro Checker Engine</h1>
-                    <p>Système professionnel de vérification de pseudos Discord</p>
-                    <div class="status">🟢 ONLINE 24/7 ON RENDER</div>
+                    <h1>K2L Pro Engine</h1>
+                    <p>Discord Username Checker • 24/7 Service</p>
+                    <div class="status">● ONLINE ON RENDER</div>
                 </div>
             </body>
         </html>
@@ -46,7 +48,7 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 [EXPRESS] Serveur Web Keep-Alive actif sur le port ${PORT}`);
+    console.log(`🌐 [EXPRESS] Serveur Web actif sur le port ${PORT}`);
 });
 
 // 2. CLIENT DISCORD
@@ -61,7 +63,7 @@ const client = new Client({
 
 const PREFIX = ',';
 
-// 3. BASE DE DONNÉES LOCALE (JSON)
+// 3. BASE DE DONNÉES JSON
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
 function loadDatabase() {
@@ -83,11 +85,40 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. ÉTAT GLOBAL & MÉTRIQUES PRO (Inspiré de Munky / OGTool)
+// 4. MOTEUR DE PROXIES
+let proxyList = [];
+let currentProxyIndex = 0;
+
+async function fetchFreeProxies() {
+    try {
+        const res = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=all&ssl=all&anonymity=all');
+        if (res.data) {
+            const raw = res.data.split('\r\n').filter(p => p.trim() !== '');
+            if (raw.length > 0) {
+                proxyList = raw;
+            }
+        }
+    } catch (err) {}
+}
+
+function getNextProxyAgent() {
+    if (proxyList.length === 0) return null;
+    const proxyUrl = `http://${proxyList[currentProxyIndex]}`;
+    currentProxyIndex = (currentProxyIndex + 1) % proxyList.length;
+    try {
+        return new HttpsProxyAgent(proxyUrl);
+    } catch (e) {
+        return null;
+    }
+}
+
+fetchFreeProxies();
+setInterval(fetchFreeProxies, 15 * 60 * 1000);
+
+// 5. ÉTAT GLOBAL
 let autoTask = null;
 let liveMessage = null;
 let antiRaidActive = false;
-let consecutiveErrors = 0;
 let systemLogs = [];
 
 let stats = {
@@ -102,12 +133,6 @@ let stats = {
     lastHit: 'Aucun'
 };
 
-function addLog(msg) {
-    systemLogs.unshift(`[${new Date().toLocaleTimeString('fr-FR')}] ${msg}`);
-    if (systemLogs.length > 5) systemLogs.pop();
-}
-
-// SMART GENERATOR : Lettres, chiffres, et placement naturel de points (.) ou underscores (_)
 function generateUsername(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
@@ -116,7 +141,6 @@ function generateUsername(length) {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
-    // 30% de chance d'insérer un point ou un underscore de façon stratégique
     if (length >= 3 && Math.random() < 0.30) {
         const special = Math.random() < 0.7 ? '.' : '_';
         const pos = Math.floor(Math.random() * (length - 2)) + 1;
@@ -126,120 +150,142 @@ function generateUsername(length) {
     return result;
 }
 
-// MOTEUR DE VÉRIFICATION AVANCÉ (Anti-Rate-Limit & Rotation d'Headers)
-async function checkUsernameOnDiscord(username) {
+async function checkUsernameWithProxy(username) {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15'
     ];
-    const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
+    const agent = getNextProxyAgent();
+
+    const config = {
+        timeout: 4000,
+        headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
+            'Accept': 'application/json'
+        }
+    };
+
+    if (agent) {
+        config.httpsAgent = agent;
+        config.httpAgent = agent;
+    }
 
     try {
-        // Interrogation directe de l'API de validation Discord (endpoint non-authentifié)
         const response = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
             { username: username },
-            {
-                timeout: 5000,
-                headers: {
-                    'Content-Type': 'application/json',
-                    'User-Agent': randomUA,
-                    'Accept': 'application/json',
-                    'Origin': 'https://discord.com',
-                    'Referer': 'https://discord.com/'
-                }
-            }
+            config
         );
 
-        consecutiveErrors = 0;
-        // Discord renvoie { taken: false } si le pseudo est libre
         if (response.data && typeof response.data.taken !== 'undefined') {
             if (response.data.taken === false) {
-                return true; // Disponible (Available)
+                return true;
             } else {
                 stats.taken++;
-                return false; // Pris (Taken)
+                return false;
             }
         }
         stats.taken++;
         return false;
     } catch (err) {
-        consecutiveErrors++;
-        stats.failed++;
-
-        // Gestion du rate-limit (429)
-        if (err.response && err.response.status === 429) {
-            addLog(`Rate-Limit (429) rencontré sur ${username}`);
-            return 'RATELIMIT';
-        }
-
-        if (err.response && err.response.data && err.response.data.taken === true) {
+        try {
+            const fallbackResponse = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
+                { username: username },
+                { timeout: 3000 }
+            );
+            if (fallbackResponse.data && fallbackResponse.data.taken === false) return true;
             stats.taken++;
             return false;
+        } catch (e) {
+            stats.failed++;
+            return 'RATELIMIT';
         }
-
-        return false;
     }
 }
 
-// 5. DASHBOARD EMBED PROFESSIONNEL
+// 6. DASHBOARD EMBED ULTRA CLEAN (DESIGN SOBRE ET PRO)
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
 
     let liveLogText = stats.recentChecks.length > 0 
         ? stats.recentChecks.map(item => {
-            let icon = '🔴';
-            let label = 'Taken';
-            if (item.status === 'Available') { icon = '🟢'; label = 'AVAILABLE !'; }
-            if (item.status === 'RateLimit') { icon = '⚠️'; label = 'Rate-Limit (Backoff)'; }
-            return `${icon} \`${item.username}\` ── **${label}**`;
+            let statusBadge = '`🔴 Taken`';
+            if (item.status === 'Available') statusBadge = '`🟢 AVAILABLE`';
+            if (item.status === 'RateLimit') statusBadge = '`⚠️ Retry`';
+            return `\`${item.username.padEnd(8, ' ')}\` ─ ${statusBadge}`;
         }).join('\n')
-        : '`[En attente du lancement du scan...]`';
+        : '`[En attente de démarrage]`';
 
     const db = loadDatabase();
 
     const embed = new EmbedBuilder()
-        .setTitle('⚡ K2L PRO CHECKER • Live Dashboard')
-        .setDescription('**Système professionnel de vérification de pseudos Discord en temps réel**')
+        .setTitle('USERNAME CHECKER')
+        .setColor(stats.running ? '#2ecc71' : '#1f2638')
         .addFields(
             { 
-                name: '📊 Métriques Live', 
-                value: `• **CHECKED** : \`${stats.checked}\`\n• **AVAILABLE / HITS** : \`${stats.available}\`\n• **TAKEN** : \`${stats.taken}\`\n• **FAILED / RATE-LIMIT** : \`${stats.failed}\`\n• **SPEED** : \`${speed} req/s\`\n• **Taille** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **RUNNING**' : '🔴 **STOPPED**'}`, 
+                name: 'STATUT', 
+                value: stats.running ? '🟢 **RUNNING**' : '🔴 **STOPPED**', 
+                inline: true 
+            },
+            { 
+                name: 'VITESSE', 
+                value: `\`${speed} req/s\``, 
+                inline: true 
+            },
+            { 
+                name: 'TAILLE', 
+                value: `\`${stats.length} car.\``, 
+                inline: true 
+            },
+            { 
+                name: 'MÉTRIQUES SCAN', 
+                value: `\`\`\`yaml\nChecked:   ${stats.checked}\nHits:      ${stats.available}\nTaken:     ${stats.taken}\nFailed:    ${stats.failed}\n\`\`\``, 
                 inline: false 
             },
-            { name: '📡 Flux en direct', value: liveLogText, inline: false },
-            { name: '📁 Base de Données', value: `• Hits sauvés : \`${db.savedUsernames.length}\``, inline: true },
-            { name: '🛡️ Sécurité', value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`, inline: true }
+            { 
+                name: 'LIVE STREAM', 
+                value: liveLogText, 
+                inline: false 
+            },
+            { 
+                name: 'BASE DE DONNÉES', 
+                value: `Hits enregistrés: \`${db.savedUsernames.length}\``, 
+                inline: true 
+            },
+            { 
+                name: 'ANTI-RAID', 
+                value: antiRaidActive ? '`ENABLED`' : '`DISABLED`', 
+                inline: true 
+            }
         )
-        .setColor(stats.running ? '#2ECC71' : '#2E6DB4')
-        .setFooter({ text: 'K2L Pro Engine • Jitter & Backoff Protocole' })
+        .setFooter({ text: 'K2L Engine • Discord Scanner' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('menu_category')
-            .setPlaceholder('📂 Sélectionner une catégorie...')
+            .setPlaceholder('Navigation...')
             .addOptions([
-                { label: '🔍 Live Checker & Scan', value: 'cat_scan', emoji: '🔍' },
-                { label: '📂 Base de Données / Hits', value: 'cat_hits', emoji: '📁' },
-                { label: '🛡️ Modération & Sécurité', value: 'cat_mod', emoji: '🛡️' },
-                { label: '📊 Télémetrie & Logs', value: 'cat_sys', emoji: '📊' }
+                { label: 'Scanner & Control', value: 'cat_scan' },
+                { label: 'Saved Hits', value: 'cat_hits' },
+                { label: 'Security & Anti-Raid', value: 'cat_mod' },
+                { label: 'System Telemetry', value: 'cat_sys' }
             ])
     );
 
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(stats.running ? 'btn_stop_scan' : 'btn_start_scan')
-            .setLabel(stats.running ? '🛑 Stop Scan' : '🚀 Start Run')
+            .setLabel(stats.running ? 'Stop' : 'Start')
             .setStyle(stats.running ? ButtonStyle.Danger : ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId('btn_check_modal')
-            .setLabel('🔍 Check 1 Pseudo')
+            .setLabel('Check 1')
             .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
             .setCustomId('btn_refresh_panel')
-            .setLabel('🔄 Refresh')
+            .setLabel('Refresh')
             .setStyle(ButtonStyle.Secondary)
     );
 
@@ -247,46 +293,43 @@ function buildMainDashboard() {
 }
 
 client.once('ready', () => {
-    console.log(`✅ [DISCORD] Bot connecté : ${client.user.tag}`);
-    client.user.setActivity('Discord Username Checker | ,help', { type: 3 });
-    addLog('Bot initialisé avec succès.');
+    console.log(`✅ [DISCORD] Bot prêt : ${client.user.tag}`);
+    client.user.setActivity('OG Usernames', { type: 3 });
 });
 client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
             const val = interaction.values[0];
-            if (val === 'cat_scan') return interaction.reply({ content: '• Cliquez sur **🚀 Start Run** pour lancer le scan.', ephemeral: true });
+            if (val === 'cat_scan') return interaction.reply({ content: '• Cliquez sur **Start** pour lancer la session de scan.', ephemeral: true });
             if (val === 'cat_hits') {
                 const db = loadDatabase();
                 const list = db.savedUsernames.length > 0 ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n') : 'Aucun hit enregistré.';
-                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord (Hits)').setDescription(list).setColor('#2E6DB4')], ephemeral: true });
+                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('SAVED HITS').setDescription(list).setColor('#1f2638')], ephemeral: true });
             }
-            if (val === 'cat_mod') return interaction.reply({ content: '• Commandes de modération : `,antiraid <on/off>`, `,clear <1-100>`, `,kick`, `,ban`', ephemeral: true });
+            if (val === 'cat_mod') return interaction.reply({ content: '• Commandes : `,antiraid <on/off>`, `,clear <1-100>`', ephemeral: true });
             if (val === 'cat_sys') {
                 const uptime = Math.floor(process.uptime() / 60);
                 const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                const logTxt = systemLogs.length > 0 ? systemLogs.join('\n') : 'Aucun log récent.';
-                return interaction.reply({ content: `📊 **Télémetrie Système**\n• **Uptime** : \`${uptime} min\`\n• **RAM** : \`${mem} MB\`\n• **Logs récents** :\n\`\`\`${logTxt}\`\`\``, ephemeral: true });
+                return interaction.reply({ content: `\`\`\`yaml\nUptime:  ${uptime} min\nRAM:     ${mem} MB\nProxies: ${proxyList.length}\n\`\`\``, ephemeral: true });
             }
         }
 
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_refresh_panel') return interaction.update(buildMainDashboard());
             if (interaction.customId === 'btn_check_modal') {
-                const modal = new ModalBuilder().setCustomId('modal_check_single').setTitle('Vérifier un Pseudo');
-                const input = new TextInputBuilder().setCustomId('input_username').setLabel('Pseudo Discord :').setStyle(TextInputStyle.Short).setRequired(true);
+                const modal = new ModalBuilder().setCustomId('modal_check_single').setTitle('Check Target');
+                const input = new TextInputBuilder().setCustomId('input_username').setLabel('Username').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
             if (interaction.customId === 'btn_start_scan') {
-                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Paramètres du Scan');
-                const input = new TextInputBuilder().setCustomId('input_length').setLabel('Longueur (2-32) :').setStyle(TextInputStyle.Short).setValue('4').setRequired(true);
+                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Start Run');
+                const input = new TextInputBuilder().setCustomId('input_length').setLabel('Length (2-32)').setStyle(TextInputStyle.Short).setValue('4').setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
             if (interaction.customId === 'btn_stop_scan') {
                 if (autoTask) { clearTimeout(autoTask); autoTask = null; stats.running = false; }
-                addLog('Scan arrêté.');
                 return interaction.update(buildMainDashboard());
             }
         }
@@ -295,14 +338,14 @@ client.on('interactionCreate', async (interaction) => {
             if (interaction.customId === 'modal_check_single') {
                 const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
                 await interaction.deferReply({ ephemeral: true });
-                const res = await checkUsernameOnDiscord(target);
-                if (res === true) return interaction.editReply(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE (AVAILABLE)** !`);
-                return interaction.editReply(`❌ Le pseudo \`${target}\` est **PRIS (TAKEN)**.`);
+                const res = await checkUsernameWithProxy(target);
+                if (res === true) return interaction.editReply(`🟢 \`${target}\` est **AVAILABLE** !`);
+                return interaction.editReply(`🔴 \`${target}\` est **TAKEN**.`);
             }
 
             if (interaction.customId === 'modal_start_scan') {
                 const len = parseInt(interaction.fields.getTextInputValue('input_length'));
-                if (!len || isNaN(len) || len < 2 || len > 32) return interaction.reply({ content: '❌ Longueur invalide !', ephemeral: true });
+                if (!len || isNaN(len) || len < 2 || len > 32) return interaction.reply({ content: '❌ Longueur invalide.', ephemeral: true });
 
                 if (autoTask) clearTimeout(autoTask);
                 stats.running = true;
@@ -313,18 +356,16 @@ client.on('interactionCreate', async (interaction) => {
                 stats.failed = 0;
                 stats.startTime = Date.now();
                 stats.recentChecks = [];
-                addLog(`Démarrage du scan (${len} caractères).`);
 
-                await interaction.reply({ content: `🚀 Scanner lancé pour des pseudos de **${len}** caractères !`, ephemeral: true });
+                await interaction.reply({ content: `🚀 Scanner démarré pour **${len}** caractères.`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
-                // BOUCLE PRO AVEC JITTER (Délai aléatoire anti-rate-limit) ET BACKOFF
-                const runProLoop = async () => {
+                const runProxyLoop = async () => {
                     if (!stats.running) return;
 
                     const candidate = generateUsername(len);
                     stats.checked++;
-                    const res = await checkUsernameOnDiscord(candidate);
+                    const res = await checkUsernameWithProxy(candidate);
                     
                     let statusText = 'Taken';
                     if (res === true) statusText = 'Available';
@@ -333,31 +374,24 @@ client.on('interactionCreate', async (interaction) => {
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
                     if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
-                    // ALERTE CIBLÉE : Notification uniquement si le pseudo est 100% DISPONIBLE (Available)
                     if (res === true) {
                         stats.available++;
                         stats.lastHit = candidate;
-                        addLog(`Hit trouvé : ${candidate}`);
-                        
                         const db = loadDatabase();
                         if (!db.savedUsernames.some(i => i.username === candidate)) {
                             db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                             saveDatabase(db);
                         }
-                        // Ping unique de l'utilisateur pour la pépite libre
-                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🟢 **DISCORD USERNAME AVAILABLE : \`${candidate}\`**` });
+                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🟢 **HIT FOUND: \`${candidate}\`**` });
                     }
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    // Délai adaptatif Jitter (entre 4 et 7 secondes) + Backoff si erreur
-                    const jitter = Math.floor(Math.random() * 3000) + 4000;
-                    const backoffMultiplier = consecutiveErrors > 2 ? 2.5 : 1;
-
-                    autoTask = setTimeout(runProLoop, jitter * backoffMultiplier);
+                    const delay = Math.floor(Math.random() * 2000) + 2500;
+                    autoTask = setTimeout(runProxyLoop, delay);
                 };
 
-                runProLoop();
+                runProxyLoop();
             }
         }
     } catch (err) {
@@ -374,12 +408,6 @@ client.on('messageCreate', async (message) => {
     if (['help', 'panel', 'dashboard'].includes(command)) {
         liveMessage = await message.reply(buildMainDashboard());
         return;
-    }
-
-    if (command === 'stats') {
-        const uptime = Math.floor(process.uptime() / 60);
-        const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-        return message.reply(`📊 **Statistiques Pro**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Checked : \`${stats.checked}\` | Hits : \`${stats.available}\``);
     }
 
     if (command === 'auto') {
@@ -404,15 +432,15 @@ client.on('messageCreate', async (message) => {
         stats.startTime = Date.now();
         stats.recentChecks = [];
 
-        await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères !`);
+        await message.reply(`🚀 **Scanner démarré** (${length} caractères).`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
-        const runProLoopMsg = async () => {
+        const runProxyLoopMsg = async () => {
             if (!stats.running) return;
 
             const candidate = generateUsername(length);
             stats.checked++;
-            const res = await checkUsernameOnDiscord(candidate);
+            const res = await checkUsernameWithProxy(candidate);
             
             let statusText = 'Taken';
             if (res === true) statusText = 'Available';
@@ -429,35 +457,33 @@ client.on('messageCreate', async (message) => {
                     db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                     saveDatabase(db);
                 }
-                await message.channel.send({ content: `<@${message.author.id}> 🟢 **DISCORD USERNAME AVAILABLE : \`${candidate}\`**` });
+                await message.channel.send({ content: `<@${message.author.id}> 🟢 **HIT FOUND: \`${candidate}\`**` });
             }
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const jitter = Math.floor(Math.random() * 3000) + 4000;
-            const backoffMultiplier = consecutiveErrors > 2 ? 2.5 : 1;
-
-            autoTask = setTimeout(runProLoopMsg, jitter * backoffMultiplier);
+            const delay = Math.floor(Math.random() * 2000) + 2500;
+            autoTask = setTimeout(runProxyLoopMsg, delay);
         };
 
-        runProLoopMsg();
+        runProxyLoopMsg();
         return;
     }
 
     if (command === 'check') {
         const target = args[0]?.toLowerCase();
-        if (!target) return message.reply('❌ Exemple : `,check pseudo123`');
-        const loading = await message.reply(`🔍 Test Discord de \`${target}\`...`);
-        const res = await checkUsernameOnDiscord(target);
-        if (res === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE (AVAILABLE)** !`);
-        return loading.edit(`❌ Le pseudo \`${target}\` est **PRIS (TAKEN)**.`);
+        if (!target) return message.reply('❌ Usage : `,check pseudo`');
+        const loading = await message.reply(`🔍 Verification...`);
+        const res = await checkUsernameWithProxy(target);
+        if (res === true) return loading.edit(`🟢 \`${target}\` est **AVAILABLE** !`);
+        return loading.edit(`🔴 \`${target}\` est **TAKEN**.`);
     }
 
     if (command === 'lookup' || command === 'hits') {
         const db = loadDatabase();
-        if (!db.savedUsernames.length) return message.reply('📂 Aucun hit enregistré.');
+        if (!db.savedUsernames.length) return message.reply('📂 Aucun hit.');
         const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord Enregistrées').setDescription(list).setColor('#2E6DB4')] });
+        return message.reply({ embeds: [new EmbedBuilder().setTitle('SAVED HITS').setDescription(list).setColor('#1f2638')] });
     }
 
     if (command === 'clear') {
@@ -468,41 +494,11 @@ client.on('messageCreate', async (message) => {
         const msg = await message.channel.send(`🧹 **${count}** messages supprimés.`);
         setTimeout(() => msg.delete().catch(() => {}), 3000);
     }
-
-    if (command === 'antiraid') {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("❌ Administrateur requis.");
-        antiRaidActive = (args[0]?.toLowerCase() === 'on');
-        return message.reply(`🛡️ Anti-Raid : **${antiRaidActive ? 'ACTIVÉ 🟢' : 'DÉSACTIVÉ 🔴'}**`);
-    }
-
-    if (command === 'kick') {
-        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply("❌ Permission requise.");
-        const member = message.mentions.members.first();
-        if (member) { await member.kick(); message.reply(`✅ **${member.user.tag}** expulsé.`); }
-    }
-
-    if (command === 'ban') {
-        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise.");
-        const member = message.mentions.members.first();
-        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`); }
-    }
-
-    if (command === 'lock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise.");
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-        return message.reply("🔒 Salon verrouillé.");
-    }
-
-    if (command === 'unlock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise.");
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
-        return message.reply("🔓 Salon déverrouillé.");
-    }
 });
 
 const TOKEN = process.env.DISCORD_TOKEN;
 if (!TOKEN) {
-    console.error("❌ DISCORD_TOKEN manquant !");
+    console.error("❌ DISCORD_TOKEN manquant.");
     process.exit(1);
 }
 
