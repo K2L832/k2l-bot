@@ -109,12 +109,11 @@ function generateUsername(length) {
     return result;
 }
 
-// CHECKER ANTI-RATE-LIMIT CIBLÉ DISCORD SUR INSTANTUSERNAME
+// CHECKER CIBLÉ SUR INSTANTUSERNAME.COM
 async function checkUsernameOnSite(username) {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15'
     ];
     const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
 
@@ -125,9 +124,7 @@ async function checkUsernameOnSite(username) {
                 'User-Agent': randomUA,
                 'Accept': 'application/json, text/plain, */*',
                 'Referer': 'https://instantusername.com/',
-                'Origin': 'https://instantusername.com',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-Mode': 'cors'
+                'Origin': 'https://instantusername.com'
             }
         });
 
@@ -172,7 +169,7 @@ function buildMainDashboard() {
             { name: '🛡️ Sécurité', value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`, inline: true }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L System • InstantUsername API Anti-RateLimit' })
+        .setFooter({ text: 'K2L System • instantusername.com' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -217,7 +214,7 @@ client.on('guildMemberAdd', async (member) => {
         try { await member.kick('Mode Anti-Raid : Compte trop récent (< 3 jours).'); } catch (e) {}
     }
 });
-                                                             client.on('interactionCreate', async (interaction) => {
+client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
             const val = interaction.values[0];
@@ -288,7 +285,6 @@ client.on('guildMemberAdd', async (member) => {
                 await interaction.reply({ content: `🚀 Scanner lancé pour **${len}** caractères !`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
-                // Cadence à 4.5 secondes pour esquiver les rate-limits du site
                 autoTask = setInterval(async () => {
                     const candidate = generateUsername(len);
                     stats.checked++;
@@ -353,7 +349,6 @@ client.on('messageCreate', async (message) => {
         await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères !`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
-        // Cadence à 4.5 secondes pour esquiver les rate-limits
         autoTask = setInterval(async () => {
             const candidate = generateUsername(length);
             stats.checked++;
@@ -421,7 +416,7 @@ client.on('messageCreate', async (message) => {
     if (command === 'ban') {
         if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise.");
         const member = message.mentions.members.first();
-        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`);
+        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`); }
     }
 
     if (command === 'lock') {
@@ -444,3 +439,4 @@ if (!TOKEN) {
 }
 
 client.login(TOKEN);
+                                          
