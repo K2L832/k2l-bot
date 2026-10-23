@@ -28,8 +28,8 @@ app.get('/', (req, res) => {
                 <meta charset="UTF-8">
                 <title>K2L Pro Live Checker</title>
                 <style>
-                    body { font-family: sans-serif; background: #0f1117; color: #fff; text-align: center; padding-top: 50px; }
-                    .card { background: #1a1d24; display: inline-block; padding: 30px; border-radius: 12px; border: 1px solid #5865F2; }
+                    body { font-family: sans-serif; background: #0b0e14; color: #fff; text-align: center; padding-top: 50px; }
+                    .card { background: #151922; display: inline-block; padding: 30px; border-radius: 12px; border: 1px solid #5865F2; }
                     h1 { color: #5865F2; }
                     .status { padding: 6px 12px; background: #2ecc71; color: #fff; border-radius: 20px; font-weight: bold; }
                 </style>
@@ -37,7 +37,7 @@ app.get('/', (req, res) => {
             <body>
                 <div class="card">
                     <h1>⚡ K2L Pro Live Checker</h1>
-                    <p>Moteur de recherche professionnel anti-rate-limit</p>
+                    <p>Système pro de vérification Discord en temps réel</p>
                     <div class="status">🟢 ONLINE 24/7 ON RENDER</div>
                 </div>
             </body>
@@ -84,11 +84,12 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. ÉTAT GLOBAL ET CONFIG PRO
+// 4. ÉTAT GLOBAL ET STATS
 let autoTask = null;
 let liveMessage = null;
 let antiRaidActive = false;
 let consecutiveErrors = 0;
+let systemLogs = [];
 
 let stats = {
     running: false,
@@ -101,7 +102,12 @@ let stats = {
     lastHit: 'Aucun'
 };
 
-// GÉNÉRATEUR HUMAIN : Lettres, Chiffres et Points (.)
+function addLog(msg) {
+    systemLogs.unshift(`[${new Date().toLocaleTimeString('fr-FR')}] ${msg}`);
+    if (systemLogs.length > 5) systemLogs.pop();
+}
+
+// GENERATEUR DE PSEUDOS : Lettres, Chiffres et Points (.)
 function generateUsername(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789_';
     let result = '';
@@ -110,8 +116,7 @@ function generateUsername(length) {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
 
-    // Insertion naturelle d'un point (.) dans 30% des cas si la longueur le permet
-    if (length >= 3 && Math.random() < 0.30) {
+    if (length >= 3 && Math.random() < 0.28) {
         const pos = Math.floor(Math.random() * (length - 2)) + 1;
         result = result.substring(0, pos) + '.' + result.substring(pos + 1);
     }
@@ -119,51 +124,50 @@ function generateUsername(length) {
     return result;
 }
 
-// MOTEUR DE RECHERCHE PRO : Rotation de Fingerprints & Anti-Rate-Limit
+// MOTEUR RECHERCHE PRO - DOUBLE FALLBACK ANTI-BLOCAGE
 async function checkUsernameOnSite(username) {
     const userAgents = [
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15',
-        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0'
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15'
     ];
     const randomUA = userAgents[Math.floor(Math.random() * userAgents.length)];
 
+    // Tentative 1 : Direct API
     try {
-        // Requête ciblée strict sur l'API de InstantUsername pour le service Discord
         const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
-            timeout: 6000,
+            timeout: 5000,
             headers: { 
                 'User-Agent': randomUA,
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Referer': 'https://instantusername.com/',
-                'Origin': 'https://instantusername.com',
-                'Sec-Fetch-Site': 'same-origin',
-                'Sec-Fetch-Mode': 'cors',
-                'Cache-Control': 'no-cache'
+                'Origin': 'https://instantusername.com'
             }
         });
 
-        consecutiveErrors = 0; // Reset des erreurs si succès
-
+        consecutiveErrors = 0;
         if (response.data && typeof response.data.available !== 'undefined') {
             return response.data.available === true;
         }
         return false;
     } catch (err) {
+        // Tentative 2 : Fallback miroir anti-Cloudflare
+        try {
+            const fallbackUrl = `https://corsproxy.io/?${encodeURIComponent(`https://instantusername.com/api/check?username=${username}&service=discord`)}`;
+            const resFallback = await axios.get(fallbackUrl, { timeout: 4000 });
+            consecutiveErrors = 0;
+            if (resFallback.data && typeof resFallback.data.available !== 'undefined') {
+                return resFallback.data.available === true;
+            }
+        } catch (e) {}
+
         consecutiveErrors++;
         stats.failed++;
-        
-        // Si trop d'erreurs d'affilée, le moteur s'adapte automatiquement
-        if (consecutiveErrors >= 5) {
-            console.log('⚠️ [PRO-PROTECTION] Ralentissement automatique de sécurité activé suite à un blocage réseau.');
-        }
-        return false;
+        addLog(`Erreur API/Network sur ${username}`);
+        return null;
     }
 }
 
-// 5. DASHBOARD EMBED PRO CLEAN
+// 5. DASHBOARD EMBED
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -173,28 +177,28 @@ function buildMainDashboard() {
             let icon = '🔴';
             let label = 'Pris';
             if (item.status === 'Available') { icon = '🟢'; label = '100% DISPO DISCORD !'; }
-            if (item.status === 'Error') { icon = '⚠️'; label = 'Sécurité / Backoff'; }
+            if (item.status === 'Error') { icon = '⚠️'; label = 'Pause Sécurité / Retry'; }
             return `${icon} \`${item.username}\` ── **${label}**`;
         }).join('\n')
-        : '`[En attente du lancement du scan...]`';
+        : '`[Scan en attente de lancement...]`';
 
     const db = loadDatabase();
 
     const embed = new EmbedBuilder()
         .setTitle('⚡ K2L PRO LIVE CHECKER - Discord Engine')
-        .setDescription('**Moteur de recherche professionnel en temps réel (InstantUsername - Discord API)**')
+        .setDescription('**Moteur de recherche professionnel (InstantUsername - Case Discord)**')
         .addFields(
             { 
                 name: '📊 Métriques Live', 
-                value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Discord** : \`${stats.available}\`\n• **Erreurs / Sécurité** : \`${stats.failed}\`\n• **Vitesse Moyenne** : \`${speed} req/s\`\n• **Taille** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS (PRO MODE)**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
+                value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Discord** : \`${stats.available}\`\n• **Erreurs API** : \`${stats.failed}\`\n• **Vitesse** : \`${speed} req/s\`\n• **Taille** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
                 inline: false 
             },
-            { name: '📡 Flux en direct (Vérification Instantanée)', value: liveLogText, inline: false },
-            { name: '📁 Base de Données', value: `• Pseudos sauvegardés : \`${db.savedUsernames.length}\``, inline: true },
+            { name: '📡 Flux en direct', value: liveLogText, inline: false },
+            { name: '📁 Base de Données', value: `• Pseudos sauvés : \`${db.savedUsernames.length}\``, inline: true },
             { name: '🛡️ Sécurité', value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`, inline: true }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L Pro Engine • Anti-RateLimit Jitter Active' })
+        .setFooter({ text: 'K2L System • Anti-RateLimit & Jitter Engine' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -205,7 +209,7 @@ function buildMainDashboard() {
                 { label: '🔍 Live Checker & Scan', value: 'cat_scan', emoji: '🔍' },
                 { label: '📂 Base de Données / Hits', value: 'cat_hits', emoji: '📁' },
                 { label: '🛡️ Modération & Sécurité', value: 'cat_mod', emoji: '🛡️' },
-                { label: '📊 Télémetrie Système', value: 'cat_sys', emoji: '📊' }
+                { label: '📊 Télémetrie & Logs', value: 'cat_sys', emoji: '📊' }
             ])
     );
 
@@ -229,7 +233,8 @@ function buildMainDashboard() {
 
 client.once('ready', () => {
     console.log(`✅ [DISCORD] Bot connecté : ${client.user.tag}`);
-    client.user.setActivity('Pro Discord Scanner | ,help', { type: 3 });
+    client.user.setActivity('OG Usernames Discord | ,help', { type: 3 });
+    addLog('Bot démarré et prêt.');
 });
 
 client.on('guildMemberAdd', async (member) => {
@@ -243,32 +248,38 @@ client.on('interactionCreate', async (interaction) => {
     try {
         if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
             const val = interaction.values[0];
-            if (val === 'cat_scan') return interaction.reply({ content: '• Cliquez sur **🚀 Lancer Live Scan**.', ephemeral: true });
+            if (val === 'cat_scan') return interaction.reply({ content: '• Utilisez **🚀 Lancer Live Scan** pour démarrer la recherche en direct.', ephemeral: true });
             if (val === 'cat_hits') {
                 const db = loadDatabase();
                 const list = db.savedUsernames.length > 0 ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n') : 'Aucun pseudo enregistré.';
-                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord').setDescription(list).setColor('#5865F2')], ephemeral: true });
+                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord').setDescription(list).setColor('#F1C40F')], ephemeral: true });
             }
-            if (val === 'cat_mod') return interaction.reply({ content: '• Commandes : `,antiraid <on/off>`, `,clear <1-100>`', ephemeral: true });
-            if (val === 'cat_sys') return interaction.reply({ content: `📊 Scannés : ${stats.checked}`, ephemeral: true });
+            if (val === 'cat_mod') return interaction.reply({ content: '• Commandes : `,antiraid <on/off>`, `,clear <1-100>`, `,kick`, `,ban`, `,lock`, `,unlock`', ephemeral: true });
+            if (val === 'cat_sys') {
+                const uptime = Math.floor(process.uptime() / 60);
+                const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+                const logTxt = systemLogs.length > 0 ? systemLogs.join('\n') : 'Aucun log récent.';
+                return interaction.reply({ content: `📊 **Télémetrie Bot**\n• **Uptime** : \`${uptime} min\`\n• **RAM** : \`${mem} MB\`\n• **Logs récents** :\n\`\`\`${logTxt}\`\`\``, ephemeral: true });
+            }
         }
 
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_refresh_panel') return interaction.update(buildMainDashboard());
             if (interaction.customId === 'btn_check_modal') {
-                const modal = new ModalBuilder().setCustomId('modal_check_single').setTitle('Check Pro Discord');
+                const modal = new ModalBuilder().setCustomId('modal_check_single').setTitle('Check Pseudo Discord');
                 const input = new TextInputBuilder().setCustomId('input_username').setLabel('Pseudo :').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
             if (interaction.customId === 'btn_start_scan') {
-                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Démarrer Scanner Pro');
+                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Démarrer Scanner');
                 const input = new TextInputBuilder().setCustomId('input_length').setLabel('Longueur (2-32) :').setStyle(TextInputStyle.Short).setValue('4').setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
             if (interaction.customId === 'btn_stop_scan') {
                 if (autoTask) { clearTimeout(autoTask); autoTask = null; stats.running = false; }
+                addLog('Scan arrêté manuellement.');
                 return interaction.update(buildMainDashboard());
             }
         }
@@ -279,7 +290,8 @@ client.on('interactionCreate', async (interaction) => {
                 await interaction.deferReply({ ephemeral: true });
                 const isAvailable = await checkUsernameOnSite(target);
                 if (isAvailable === true) return interaction.editReply(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE SUR DISCORD** !`);
-                return interaction.editReply(`❌ Le pseudo \`${target}\` est **PRIS**.`);
+                if (isAvailable === false) return interaction.editReply(`❌ Le pseudo \`${target}\` est **PRIS SUR DISCORD**.`);
+                return interaction.editReply(`⚠️ Erreur d'accès à l'API.`);
             }
 
             if (interaction.customId === 'modal_start_scan') {
@@ -294,18 +306,18 @@ client.on('interactionCreate', async (interaction) => {
                 stats.failed = 0;
                 stats.startTime = Date.now();
                 stats.recentChecks = [];
+                addLog(`Scan lancé (Longueur ${len})`);
 
-                await interaction.reply({ content: `🚀 Scanner Pro lancé pour **${len}** caractères !`, ephemeral: true });
+                await interaction.reply({ content: `🚀 Scanner Pro lancé pour des pseudos de **${len}** caractères !`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
-                // BOUCLE PRO AVEC DÉLAI DYNAMIQUE ALÉATOIRE (JITTER) : Empêche tout rate-limit
                 const runProLoop = async () => {
                     if (!stats.running) return;
 
                     const candidate = generateUsername(len);
                     stats.checked++;
                     const isAvailable = await checkUsernameOnSite(candidate);
-                    let statusText = isAvailable === true ? 'Available' : 'Taken';
+                    let statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
 
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
                     if (stats.recentChecks.length > 8) stats.recentChecks.pop();
@@ -313,21 +325,22 @@ client.on('interactionCreate', async (interaction) => {
                     if (isAvailable === true) {
                         stats.available++;
                         stats.lastHit = candidate;
+                        addLog(`Pépite trouvée : ${candidate}`);
                         const db = loadDatabase();
                         if (!db.savedUsernames.some(i => i.username === candidate)) {
                             db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                             saveDatabase(db);
                         }
-                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **PÉPITE DISCORD TROUVÉE : \`${candidate}\`**` });
+                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **PÉPITE LIBRE SUR DISCORD : \`${candidate}\`**` });
                     }
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    // Délai adaptatif intelligent : de 7 à 12 secondes aléatoires (Anti-Rate-Limit absolu)
-                    const randomDelay = Math.floor(Math.random() * 5000) + 7000;
-                    const backoffMultiplier = consecutiveErrors > 2 ? 2 : 1; // Si blocage détecté, double le temps de pause
-                    
-                    autoTask = setTimeout(runProLoop, randomDelay * backoffMultiplier);
+                    // Délai adaptatif (Jitter) : 6s à 9s + Backoff en cas d'erreur
+                    const baseDelay = Math.floor(Math.random() * 3000) + 6000;
+                    const backoff = consecutiveErrors > 2 ? 2 : 1;
+
+                    autoTask = setTimeout(runProLoop, baseDelay * backoff);
                 };
 
                 runProLoop();
@@ -347,6 +360,12 @@ client.on('messageCreate', async (message) => {
     if (['help', 'panel', 'dashboard'].includes(command)) {
         liveMessage = await message.reply(buildMainDashboard());
         return;
+    }
+
+    if (command === 'stats') {
+        const uptime = Math.floor(process.uptime() / 60);
+        const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
+        return message.reply(`📊 **Statistiques Bot**\n• Uptime : \`${uptime} minutes\`\n• RAM : \`${mem} MB\`\n• Total Scannés : \`${stats.checked}\``);
     }
 
     if (command === 'auto') {
@@ -370,7 +389,7 @@ client.on('messageCreate', async (message) => {
         stats.startTime = Date.now();
         stats.recentChecks = [];
 
-        await message.reply(`🚀 **Live Scanner Pro démarré** pour **${length}** caractères !`);
+        await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères !`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
         const runProLoopMsg = async () => {
@@ -379,7 +398,7 @@ client.on('messageCreate', async (message) => {
             const candidate = generateUsername(length);
             stats.checked++;
             const isAvailable = await checkUsernameOnSite(candidate);
-            let statusText = isAvailable === true ? 'Available' : 'Taken';
+            let statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
 
             stats.recentChecks.unshift({ username: candidate, status: statusText });
             if (stats.recentChecks.length > 8) stats.recentChecks.pop();
@@ -392,15 +411,15 @@ client.on('messageCreate', async (message) => {
                     db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                     saveDatabase(db);
                 }
-                await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE DISCORD TROUVÉE : \`${candidate}\`**` });
+                await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE LIBRE SUR DISCORD : \`${candidate}\`**` });
             }
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const randomDelay = Math.floor(Math.random() * 5000) + 7000;
-            const backoffMultiplier = consecutiveErrors > 2 ? 2 : 1;
-            
-            autoTask = setTimeout(runProLoopMsg, randomDelay * backoffMultiplier);
+            const baseDelay = Math.floor(Math.random() * 3000) + 6000;
+            const backoff = consecutiveErrors > 2 ? 2 : 1;
+
+            autoTask = setTimeout(runProLoopMsg, baseDelay * backoff);
         };
 
         runProLoopMsg();
@@ -410,17 +429,18 @@ client.on('messageCreate', async (message) => {
     if (command === 'check') {
         const target = args[0]?.toLowerCase();
         if (!target) return message.reply('❌ Exemple : `,check pseudo123`');
-        const loading = await message.reply(`🔍 Test Pro de \`${target}\`...`);
+        const loading = await message.reply(`🔍 Test Discord de \`${target}\`...`);
         const isAvailable = await checkUsernameOnSite(target);
         if (isAvailable === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **100% DISPONIBLE SUR DISCORD** !`);
-        return loading.edit(`❌ Le pseudo \`${target}\` est **PRIS**.`);
+        if (isAvailable === false) return loading.edit(`❌ Le pseudo \`${target}\` est **PRIS SUR DISCORD**.`);
+        return loading.edit(`⚠️ Erreur d'accès à l'API.`);
     }
 
     if (command === 'lookup') {
         const db = loadDatabase();
         if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite.');
         const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Discord Registrées').setDescription(list).setColor('#5865F2')] });
+        return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Registrées').setDescription(list).setColor('#3498DB')] });
     }
 
     if (command === 'clear') {
