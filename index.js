@@ -16,9 +16,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// ==========================================
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
-// ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -30,11 +28,10 @@ app.get('/', (req, res) => {
                 <meta charset="UTF-8">
                 <title>K2L Munky Live Checker</title>
                 <style>
-                    body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px; }
-                    .card { background: #1a1a24; display: inline-block; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
-                    h1 { color: #5865F2; margin-bottom: 10px; }
-                    p { color: #b9bbbe; font-size: 1.1em; }
-                    .status { display: inline-block; padding: 6px 12px; background: #2ecc71; color: #fff; border-radius: 20px; font-weight: bold; margin-top: 15px; }
+                    body { font-family: sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px; }
+                    .card { background: #1a1a24; display: inline-block; padding: 30px; border-radius: 12px; }
+                    h1 { color: #5865F2; }
+                    .status { padding: 6px 12px; background: #2ecc71; color: #fff; border-radius: 20px; font-weight: bold; }
                 </style>
             </head>
             <body>
@@ -48,14 +45,11 @@ app.get('/', (req, res) => {
     `);
 });
 
-// Écoute obligatoire sur 0.0.0.0 pour les conteneurs Cloud comme Render
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌐 [EXPRESS] Serveur Web Keep-Alive actif sur http://0.0.0.0:${PORT}`);
 });
 
-// ==========================================
-// 2. INITIALISATION CLIENT DISCORD
-// ==========================================
+// 2. CLIENT DISCORD
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -68,9 +62,7 @@ const client = new Client({
 
 const PREFIX = ',';
 
-// ==========================================
-// 3. BASE DE DONNÉES LOCALE PERSISTANTE (JSON)
-// ==========================================
+// 3. BASE DE DONNÉES JSON
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
 function loadDatabase() {
@@ -80,10 +72,8 @@ function loadDatabase() {
         return initialDB;
     }
     try {
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(data);
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
     } catch (e) {
-        console.error('⚠️ [BDD] Erreur de lecture, réinitialisation temporaire :', e.message);
         return { savedUsernames: [], settings: { antiRaid: false }, logs: [] };
     }
 }
@@ -91,16 +81,12 @@ function loadDatabase() {
 function saveDatabase(data) {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error('❌ [BDD] Erreur d\'écriture :', e.message);
-    }
+    } catch (e) {}
 }
 
-// ==========================================
-// 4. ÉTAT GLOBAL & TÉLÉMÉTRIE DU SCANNER
-// ==========================================
+// 4. ÉTAT GLOBAL
 let autoTask = null;
-let liveMessage = null; // Message Discord mis à jour automatiquement
+let liveMessage = null;
 let antiRaidActive = false;
 
 let stats = {
@@ -110,11 +96,10 @@ let stats = {
     available: 0,
     failed: 0,
     startTime: null,
-    recentChecks: [], // Stocke les 8 derniers pseudos testés en direct
+    recentChecks: [],
     lastHit: 'Aucun'
 };
 
-// Générateur de pseudonymes aléatoires
 function generateUsername(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789_';
     let result = '';
@@ -124,7 +109,6 @@ function generateUsername(length) {
     return result;
 }
 
-// Vérification auprès de l'API InstantUsername
 async function checkUsernameOnSite(username) {
     try {
         const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
@@ -147,20 +131,17 @@ async function checkUsernameOnSite(username) {
     }
 }
 
-// ==========================================
-// 5. CONSTRUCTEUR DE L'EMBED DASHBOARD ULTRA-CLEAN
-// ==========================================
+// 5. DASHBOARD EMBED
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
 
-    // Formatage du flux en direct avec icônes
     let liveLogText = stats.recentChecks.length > 0 
         ? stats.recentChecks.map(item => {
             let icon = '🔴';
             let label = 'Pris / Indisponible';
             if (item.status === 'Available') { icon = '🟢'; label = 'DISPONIBLE / LIBRE !'; }
-            if (item.status === 'Error') { icon = '⚠️'; label = 'Erreur Réseau/API'; }
+            if (item.status === 'Error') { icon = '⚠️'; label = 'Erreur API'; }
             return `${icon} \`${item.username}\` ── **${label}**`;
         }).join('\n')
         : '`[Scan en attente de lancement...]`';
@@ -176,40 +157,26 @@ function buildMainDashboard() {
                 value: `• **Pseudos Scannés** : \`${stats.checked}\`\n• **Pépites Trouvées** : \`${stats.available}\`\n• **Erreurs API** : \`${stats.failed}\`\n• **Vitesse de Scan** : \`${speed} req/s\`\n• **Taille Choisie** : \`${stats.length} car.\`\n• **Statut** : ${stats.running ? '🟢 **SCAN EN COURS EN TEMPS RÉEL**' : '🔴 **INACTIF**'}\n• **Dernier Hit** : \`${stats.lastHit}\``, 
                 inline: false 
             },
-            {
-                name: '📡 Flux en direct (Actualisé en continu)',
-                value: liveLogText,
-                inline: false
-            },
-            {
-                name: '📁 Base de Données',
-                value: `• Pseudos sauvegardés : \`${db.savedUsernames.length}\``,
-                inline: true
-            },
-            {
-                name: '🛡️ Sécurité',
-                value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`,
-                inline: true
-            }
+            { name: '📡 Flux en direct', value: liveLogText, inline: false },
+            { name: '📁 Base de Données', value: `• Pseudos sauvegardés : \`${db.savedUsernames.length}\``, inline: true },
+            { name: '🛡️ Sécurité', value: `• Anti-Raid : ${antiRaidActive ? '🟢 **Actif**' : '🔴 **Inactif**'}`, inline: true }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L Live System • Connecté à InstantUsername API' })
+        .setFooter({ text: 'K2L Live System • InstantUsername API' })
         .setTimestamp();
 
-    // Menu de sélection déroulant par catégories
     const selectMenu = new ActionRowBuilder().addComponents(
         new StringSelectMenuBuilder()
             .setCustomId('menu_category')
             .setPlaceholder('📂 Sélectionner une catégorie d\'options...')
             .addOptions([
-                { label: '🔍 Live Checker & Scan', description: 'Gérer et surveiller le scan en direct', value: 'cat_scan', emoji: '🔍' },
-                { label: '📂 Base de Données / Hits', description: 'Consulter tous les pseudos sauvegardés', value: 'cat_hits', emoji: '📁' },
-                { label: '🛡️ Modération & Sécurité', description: 'Commandes de sécurité et nettoyage', value: 'cat_mod', emoji: '🛡️' },
-                { label: '📊 Télémetrie Système', description: 'Performances du serveur et du bot', value: 'cat_sys', emoji: '📊' }
+                { label: '🔍 Live Checker & Scan', value: 'cat_scan', emoji: '🔍' },
+                { label: '📂 Base de Données / Hits', value: 'cat_hits', emoji: '📁' },
+                { label: '🛡️ Modération & Sécurité', value: 'cat_mod', emoji: '🛡️' },
+                { label: '📊 Télémetrie Système', value: 'cat_sys', emoji: '📊' }
             ])
     );
 
-    // Boutons de contrôle interactifs
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(stats.running ? 'btn_stop_scan' : 'btn_start_scan')
@@ -228,159 +195,78 @@ function buildMainDashboard() {
     return { embeds: [embed], components: [selectMenu, buttons] };
 }
 
-// Bot prêt
 client.once('ready', () => {
     console.log(`✅ [DISCORD] Bot connecté : ${client.user.tag}`);
     client.user.setActivity('Pseudos OG | ,help', { type: 3 });
 });
 
-// ==========================================
-// 6. SYSTÈME ANTI-RAID
-// ==========================================
 client.on('guildMemberAdd', async (member) => {
     if (!antiRaidActive) return;
     const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
     if (accountAgeDays < 3) {
-        try {
-            await member.send(`⚠️ Tu as été expulsé de **${member.guild.name}** car le mode Anti-Raid est actif (Compte < 3 jours).`);
-        } catch (e) {}
-        try {
-            await member.kick('Mode Anti-Raid : Compte trop récents (< 3 jours).');
-        } catch (e) {
-            console.error('Erreur expulsion Anti-Raid :', e.message);
-        }
+        try { await member.kick('Mode Anti-Raid : Compte trop récent (< 3 jours).'); } catch (e) {}
     }
 });
-
-// ==========================================
-// 7. GESTION DES INTERACTIONS (BOUTONS / MENUS / MODALS)
-// ==========================================
 client.on('interactionCreate', async (interaction) => {
     try {
-        // A. MENUS DÉROULANTS
         if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
             const val = interaction.values[0];
-
             if (val === 'cat_scan') {
-                const embed = new EmbedBuilder()
-                    .setTitle('🔍 Contrôle du Scanner')
-                    .setDescription('• **🚀 Lancer Live Scan** : Démarre la recherche automatique.\n• **🔍 Check 1 Pseudo** : Teste un nom d\'utilisateur précis.\n• **🛑 Arrêter le Scan** : Stoppe la boucle en cours.')
-                    .setColor('#3498DB');
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return interaction.reply({ content: '• Cliquez sur **🚀 Lancer Live Scan** pour démarrer.', ephemeral: true });
             }
-
             if (val === 'cat_hits') {
                 const db = loadDatabase();
                 const list = db.savedUsernames.length > 0 
-                    ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` ── *(détecté le ${new Date(i.timestamp).toLocaleDateString()} à ${new Date(i.timestamp).toLocaleTimeString()})*`).join('\n')
-                    : 'Aucun pseudo enregistré dans la base de données pour le moment.';
-
-                const embed = new EmbedBuilder()
-                    .setTitle('📂 Base de Données - Pépites Sauvées')
-                    .setDescription(list)
-                    .setColor('#F1C40F');
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                    ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n')
+                    : 'Aucun pseudo enregistré.';
+                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Sauvées').setDescription(list).setColor('#F1C40F')], ephemeral: true });
             }
-
             if (val === 'cat_mod') {
-                const embed = new EmbedBuilder()
-                    .setTitle('🛡️ Commandes de Modération')
-                    .setDescription('• `,antiraid <on/off>` : Active/désactive l\'expulsion automatique.\n• `,clear <1-100>` : Supprime des messages dans le salon.\n• `,kick <@membre>` : Expulse un utilisateur.\n• `,ban <@membre>` : Bannit un utilisateur.\n• `,lock` / `,unlock` : Verrouille ou déverrouille le salon.')
-                    .setColor('#E74C3C');
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return interaction.reply({ content: '• Commandes : `,antiraid <on/off>`, `,clear <1-100>`, `,kick`, `,ban`, `,lock`, `,unlock`', ephemeral: true });
             }
-
             if (val === 'cat_sys') {
-                const uptime = Math.floor(client.uptime / 1000);
-                const embed = new EmbedBuilder()
-                    .setTitle('📊 Télémetrie Système')
-                    .addFields(
-                        { name: 'Uptime', value: `\`${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s\``, inline: true },
-                        { name: 'Total Scannés', value: `\`${stats.checked}\``, inline: true },
-                        { name: 'Pépites Trouvées', value: `\`${stats.available}\``, inline: true },
-                        { name: 'Erreurs API', value: `\`${stats.failed}\``, inline: true },
-                        { name: 'RAM Utilisée', value: `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\``, inline: true }
-                    )
-                    .setColor('#9B59B6');
-                return interaction.reply({ embeds: [embed], ephemeral: true });
+                return interaction.reply({ content: `📊 Scannés : ${stats.checked} | Trouvés : ${stats.available}`, ephemeral: true });
             }
         }
 
-        // B. BOUTONS
         if (interaction.isButton()) {
-            if (interaction.customId === 'btn_refresh_panel') {
-                return interaction.update(buildMainDashboard());
-            }
+            if (interaction.customId === 'btn_refresh_panel') return interaction.update(buildMainDashboard());
 
             if (interaction.customId === 'btn_check_modal') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_check_single')
-                    .setTitle('Check Rapide de Pseudo');
-
-                const input = new TextInputBuilder()
-                    .setCustomId('input_username')
-                    .setLabel('Pseudo à vérifier :')
-                    .setStyle(TextInputStyle.Short)
-                    .setPlaceholder('Exemple: dark_master')
-                    .setRequired(true)
-                    .setMaxLength(32);
-
+                const modal = new ModalBuilder().setCustomId('modal_check_single').setTitle('Check Rapide');
+                const input = new TextInputBuilder().setCustomId('input_username').setLabel('Pseudo :').setStyle(TextInputStyle.Short).setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
 
             if (interaction.customId === 'btn_start_scan') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_start_scan')
-                    .setTitle('Démarrer le Scanner Live');
-
-                const input = new TextInputBuilder()
-                    .setCustomId('input_length')
-                    .setLabel('Longueur des pseudos (2 à 32) :')
-                    .setStyle(TextInputStyle.Short)
-                    .setValue('4')
-                    .setRequired(true)
-                    .setMaxLength(2);
-
+                const modal = new ModalBuilder().setCustomId('modal_start_scan').setTitle('Démarrer Scanner');
+                const input = new TextInputBuilder().setCustomId('input_length').setLabel('Longueur (2-32) :').setStyle(TextInputStyle.Short).setValue('4').setRequired(true);
                 modal.addComponents(new ActionRowBuilder().addComponents(input));
                 return interaction.showModal(modal);
             }
 
             if (interaction.customId === 'btn_stop_scan') {
-                if (autoTask) {
-                    clearInterval(autoTask);
-                    autoTask = null;
-                    stats.running = false;
-                }
+                if (autoTask) { clearInterval(autoTask); autoTask = null; stats.running = false; }
                 return interaction.update(buildMainDashboard());
             }
         }
 
-        // C. SOUMISSION DES FORMULAIRES (MODALS)
         if (interaction.isModalSubmit()) {
             if (interaction.customId === 'modal_check_single') {
                 const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
                 await interaction.deferReply({ ephemeral: true });
-
                 const isAvailable = await checkUsernameOnSite(target);
-
-                if (isAvailable === true) {
-                    return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE / OG DISCORD** !`);
-                } else if (isAvailable === false) {
-                    return interaction.editReply(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS**.`);
-                } else {
-                    return interaction.editReply(`⚠️ Impossible de vérifier \`${target}\` (Erreur d'accès à l'API).`);
-                }
+                if (isAvailable === true) return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE** !`);
+                if (isAvailable === false) return interaction.editReply(`❌ Le pseudo \`${target}\` est **PRIS**.`);
+                return interaction.editReply(`⚠️ Erreur d'accès à l'API.`);
             }
 
             if (interaction.customId === 'modal_start_scan') {
                 const len = parseInt(interaction.fields.getTextInputValue('input_length'));
-                if (!len || isNaN(len) || len < 2 || len > 32) {
-                    return interaction.reply({ content: '❌ Longueur invalide ! Choisissez entre 2 et 32.', ephemeral: true });
-                }
+                if (!len || isNaN(len) || len < 2 || len > 32) return interaction.reply({ content: '❌ Longueur invalide !', ephemeral: true });
 
                 if (autoTask) clearInterval(autoTask);
-
                 stats.running = true;
                 stats.length = len;
                 stats.checked = 0;
@@ -389,93 +275,62 @@ client.on('interactionCreate', async (interaction) => {
                 stats.startTime = Date.now();
                 stats.recentChecks = [];
 
-                await interaction.reply({ content: `🚀 Live Scanner démarré pour des pseudos de **${len}** caractères !`, ephemeral: true });
-
+                await interaction.reply({ content: `🚀 Scanner lancé pour **${len}** caractères !`, ephemeral: true });
                 liveMessage = await interaction.channel.send(buildMainDashboard());
 
-                // SCANNE ET MET À JOUR LE MESSAGE TOUTES LES 2 SECONDES !
                 autoTask = setInterval(async () => {
                     const candidate = generateUsername(len);
                     stats.checked++;
-
                     const isAvailable = await checkUsernameOnSite(candidate);
-                    let statusText = 'Taken';
-                    if (isAvailable === true) statusText = 'Available';
-                    if (isAvailable === null) statusText = 'Error';
+                    let statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
 
-                    // Empile le dernier résultat en haut
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
                     if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
-                    // Si on trouve un pseudo libre !
                     if (isAvailable === true) {
                         stats.available++;
                         stats.lastHit = candidate;
-
                         const db = loadDatabase();
                         if (!db.savedUsernames.some(i => i.username === candidate)) {
                             db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                             saveDatabase(db);
                         }
-
-                        const alertEmbed = new EmbedBuilder()
-                            .setTitle('🎉 PÉPITE OG DISPONIBLE DÉTECTÉE !')
-                            .setDescription(`Un pseudo libre a été identifié en direct !\n\n✨ Pseudo : \`${candidate}\``)
-                            .setColor('#2ECC71')
-                            .setTimestamp();
-
-                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **HIT DÉTECTÉ EN DIRECT !**`, embeds: [alertEmbed] });
+                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **PÉPITE DÉTECTÉE : \`${candidate}\`**` });
                     }
 
-                    // Édition continue de l'embed principal
-                    if (liveMessage) {
-                        liveMessage.edit(buildMainDashboard()).catch(() => {});
-                    }
+                    if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
                 }, 2000);
             }
         }
     } catch (err) {
-        console.error('❌ Erreur interaction :', err);
+        console.error('Erreur interaction :', err);
     }
 });
 
-// ==========================================
-// 8. COMMANDES TEXTE (PREFIX ,)
-// ==========================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // Commandes HELP / PANEL / DASHBOARD
-    if (command === 'help' || command === 'panel' || command === 'dashboard') {
+    if (['help', 'panel', 'dashboard'].includes(command)) {
         liveMessage = await message.reply(buildMainDashboard());
         return;
     }
 
-    // Commande AUTO (Exemple: ,auto 4)
     if (command === 'auto') {
         const subAction = args[0]?.toLowerCase();
 
         if (subAction === 'off' || subAction === 'stop') {
-            if (autoTask) {
-                clearInterval(autoTask);
-                autoTask = null;
-                stats.running = false;
-            }
+            if (autoTask) { clearInterval(autoTask); autoTask = null; stats.running = false; }
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-            re             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
             return message.reply('🛑 **Scanner automatique arrêté.**');
         }
 
         const length = parseInt(subAction);
-        if (!length || isNaN(length) || length < 2 || length > 32) {
-            return message.reply('❌ **Utilisation :** `,auto <longueur (2-32)>` ou `,auto off`');
-        }
+        if (!length || isNaN(length) || length < 2 || length > 32) return message.reply('❌ Usage : `,auto <longueur>` ou `,auto off`');
 
         if (autoTask) clearInterval(autoTask);
-
         stats.running = true;
         stats.length = length;
         stats.checked = 0;
@@ -484,18 +339,14 @@ client.on('messageCreate', async (message) => {
         stats.startTime = Date.now();
         stats.recentChecks = [];
 
-        await message.reply(`🚀 **Live Scanner démarré** pour des pseudos de **${length}** caractères !`);
+        await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères !`);
         liveMessage = await message.channel.send(buildMainDashboard());
 
-        // BOUCLE D'ANALYSE TEMPS RÉEL (TOUTES LES 2 SECONDES)
         autoTask = setInterval(async () => {
             const candidate = generateUsername(length);
             stats.checked++;
-
             const isAvailable = await checkUsernameOnSite(candidate);
-            let statusText = 'Taken';
-            if (isAvailable === true) statusText = 'Available';
-            if (isAvailable === null) statusText = 'Error';
+            let statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
 
             stats.recentChecks.unshift({ username: candidate, status: statusText });
             if (stats.recentChecks.length > 8) stats.recentChecks.pop();
@@ -503,128 +354,81 @@ client.on('messageCreate', async (message) => {
             if (isAvailable === true) {
                 stats.available++;
                 stats.lastHit = candidate;
-
                 const db = loadDatabase();
                 if (!db.savedUsernames.some(i => i.username === candidate)) {
                     db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                     saveDatabase(db);
                 }
-
-                const alertEmbed = new EmbedBuilder()
-                    .setTitle('🎉 PÉPITE DISPONIBLE DÉTECTÉE !')
-                    .setDescription(`✨ Pseudo libre : \`${candidate}\``)
-                    .setColor('#2ECC71')
-                    .setTimestamp();
-
-                await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE TROUVÉE !**`, embeds: [alertEmbed] });
+                await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE TROUVÉE : \`${candidate}\`**` });
             }
 
-            // Rafraîchissement direct de l'embed
-            if (liveMessage) {
-                liveMessage.edit(buildMainDashboard()).catch(() => {});
-            }
+            if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
         }, 2000);
 
         return;
     }
 
-    // Commande CHECK
     if (command === 'check') {
         const target = args[0]?.toLowerCase();
         if (!target) return message.reply('❌ Exemple : `,check pseudo123`');
-
-        const loading = await message.reply(`🔍 Test de \`${target}\` en cours...`);
+        const loading = await message.reply(`🔍 Test de \`${target}\`...`);
         const isAvailable = await checkUsernameOnSite(target);
-
         if (isAvailable === true) return loading.edit(`🎉 Le pseudo \`${target}\` est **DISPONIBLE** !`);
-        if (isAvailable === false) return loading.edit(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS**.`);
+        if (isAvailable === false) return loading.edit(`❌ Le pseudo \`${target}\` est **PRIS**.`);
         return loading.edit(`⚠️ Erreur d'accès à l'API.`);
     }
 
-    // Commande LOOKUP
     if (command === 'lookup') {
         const db = loadDatabase();
-        if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite enregistrée pour l\'instant.');
-        
-        const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` *(trouvé le ${new Date(i.timestamp).toLocaleDateString()})*`).join('\n');
-        
-        const embed = new EmbedBuilder()
-            .setTitle('📂 Pépites Registrées dans la Base')
-            .setDescription(list)
-            .setColor('#3498DB');
-
-        return message.reply({ embeds: [embed] });
+        if (!db.savedUsernames.length) return message.reply('📂 Aucune pépite.');
+        const list = db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n');
+        return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Pépites Registrées').setDescription(list).setColor('#3498DB')] });
     }
 
-    // COMMANDES DE MODÉRATION
     if (command === 'clear') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply("❌ Permission requise : `Gérer les messages`.");
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply("❌ Permission requise.");
         const count = parseInt(args[0]);
-        if (!count || count < 1 || count > 100) return message.reply("❌ Indique un nombre entre 1 et 100.");
-        
+        if (!count || count < 1 || count > 100) return message.reply("❌ Entre 1 et 100.");
         await message.channel.bulkDelete(count + 1, true).catch(() => {});
         const msg = await message.channel.send(`🧹 **${count}** messages supprimés.`);
         setTimeout(() => msg.delete().catch(() => {}), 3000);
     }
 
     if (command === 'antiraid') {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("❌ Permission Administrateur requise.");
-        
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'on') antiRaidActive = true;
-        else if (sub === 'off') antiRaidActive = false;
-        else return message.reply("❌ Usage : `,antiraid on` ou `,antiraid off`");
-
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("❌ Administrateur requis.");
+        antiRaidActive = (args[0]?.toLowerCase() === 'on');
         return message.reply(`🛡️ Anti-Raid : **${antiRaidActive ? 'ACTIVÉ 🟢' : 'DÉSACTIVÉ 🔴'}**`);
     }
 
     if (command === 'kick') {
-        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply("❌ Permission requise : `Expulser des membres`.");
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply("❌ Permission requise.");
         const member = message.mentions.members.first();
-        if (!member) return message.reply("❌ Mentionne le membre à expulser.");
-        
-        try {
-            await member.kick();
-            message.reply(`✅ **${member.user.tag}** a été expulsé.`);
-        } catch (e) {
-            message.reply(`❌ Erreur : ${e.message}`);
-        }
+        if (member) { await member.kick(); message.reply(`✅ **${member.user.tag}** expulsé.`); }
     }
 
     if (command === 'ban') {
-        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise : `Bannir des membres`.");
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise.");
         const member = message.mentions.members.first();
-        if (!member) return message.reply("❌ Mentionne le membre à bannir.");
-        
-        try {
-            await member.ban();
-            message.reply(`✅ **${member.user.tag}** a été banni.`);
-        } catch (e) {
-            message.reply(`❌ Erreur : ${e.message}`);
-        }
+        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`); }
     }
 
     if (command === 'lock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise : `Gérer les salons`.");
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise.");
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
         return message.reply("🔒 Salon verrouillé.");
     }
 
     if (command === 'unlock') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise : `Gérer les salons`.");
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) return message.reply("❌ Permission requise.");
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: true });
         return message.reply("🔓 Salon déverrouillé.");
     }
 });
 
-// ==========================================
-// 9. LANCEMENT DU BOT
-// ==========================================
 const TOKEN = process.env.DISCORD_TOKEN;
 if (!TOKEN) {
-    console.error("❌ DISCORD_TOKEN n'est pas défini dans l'environnement !");
+    console.error("❌ DISCORD_TOKEN manquant !");
     process.exit(1);
 }
 
 client.login(TOKEN);
-
