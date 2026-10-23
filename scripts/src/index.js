@@ -9,53 +9,85 @@ const {
     ModalBuilder, 
     TextInputBuilder, 
     TextInputStyle, 
-    PermissionFlagsBits 
+    PermissionFlagsBits,
+    ChannelType
 } = require('discord.js');
 const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// --- 1. SERVEUR WEB (KEEP-ALIVE RENDER 24/7) ---
+// ==========================================
+// 1. SERVEUR WEB EXPRESS (RENDER KEEP-ALIVE)
+// ==========================================
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.get('/', (req, res) => res.status(200).send('Bot K2L Munky Live Checker 24/7'));
-app.listen(PORT, () => console.log(`🌐 Serveur Web actif sur le port ${PORT}`));
 
-// --- 2. DISCORD CLIENT ---
+app.get('/', (req, res) => {
+    res.status(200).send(`
+        <html>
+            <head><title>K2L Munky Live Checker</title></head>
+            <body style="font-family: sans-serif; background: #0f0f13; color: #fff; text-align: center; padding-top: 50px;">
+                <h1>🐒 K2L Munky Live Checker is ONLINE</h1>
+                <p>Status: Running 24/7 on Render</p>
+            </body>
+        </html>
+    `);
+});
+
+// Important : Écoute explicite sur 0.0.0.0 pour Render
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🌐 [EXPRESS] Serveur Web Keep-Alive actif sur le port ${PORT}`);
+});
+
+// ==========================================
+// 2. INITIALISATION CLIENT DISCORD
+// ==========================================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildPresences
     ]
 });
 
-const TOKEN = process.env.DISCORD_TOKEN;
 const PREFIX = ',';
 
-// --- 3. BASE DE DONNÉES LOCALE JSON ---
+// ==========================================
+// 3. GESTION DE LA BASE DE DONNÉES LOCALE
+// ==========================================
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
 function loadDatabase() {
     if (!fs.existsSync(DB_FILE)) {
-        fs.writeFileSync(DB_FILE, JSON.stringify({ savedUsernames: [] }, null, 2));
+        const initialDB = { savedUsernames: [], settings: { antiRaid: false }, logs: [] };
+        fs.writeFileSync(DB_FILE, JSON.stringify(initialDB, null, 2));
+        return initialDB;
     }
     try {
-        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+        const data = fs.readFileSync(DB_FILE, 'utf8');
+        return JSON.parse(data);
     } catch (e) {
-        return { savedUsernames: [] };
+        console.error('⚠️ Erreur lecture BDD, réinitialisation temporaire :', e.message);
+        return { savedUsernames: [], settings: { antiRaid: false }, logs: [] };
     }
 }
 
 function saveDatabase(data) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    try {
+        fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+    } catch (e) {
+        console.error('❌ Erreur écriture BDD :', e.message);
+    }
 }
 
-// État & Télémetrie Live (Inspiré de Munky Checker)
+// ==========================================
+// 4. ÉTAT GLOBAL ET TÉLÉMÉTRIE LIVE
+// ==========================================
 let autoTask = null;
-let liveMessage = null; // Message Discord qui s'actualise en direct
+let liveMessage = null; // Référence vers l'embed Discord qui s'actualise en direct
 let antiRaidActive = false;
 
 let stats = {
@@ -65,11 +97,11 @@ let stats = {
     available: 0,
     failed: 0,
     startTime: null,
-    recentChecks: [], // Liste des 6 derniers pseudos testés avec statut
+    recentChecks: [], // Garde les 6 derniers pseudos testés
     lastHit: 'Aucun'
 };
 
-// Générateur de pseudos aléatoires
+// Générateur de pseudonymes aléatoires
 function generateUsername(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789_';
     let result = '';
@@ -79,15 +111,16 @@ function generateUsername(length) {
     return result;
 }
 
-// Requête réelle vers l'API d'InstantUsername
+// Requête directe vers l'API d'InstantUsername
 async function checkUsernameOnSite(username) {
     try {
-        const response = await axios.get(`https://instantusername.com/api/check?username=${username}&service=discord`, {
+        const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
             timeout: 6000,
             headers: { 
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Referer': 'https://instantusername.com/'
+                'Referer': 'https://instantusername.com/',
+                'Cache-Control': 'no-cache'
             }
         });
         
@@ -97,37 +130,46 @@ async function checkUsernameOnSite(username) {
         return false;
     } catch (err) {
         stats.failed++;
-        return null;
+        return null; // Null indique une erreur de réseau ou de timeout
     }
 }
 
-// --- 4. CONSTRUCTEUR DU DASHBOARD INTERACTIF ---
+// ==========================================
+// 5. CONSTRUCTEUR DU DASHBOARD DYNAMIQUE
+// ==========================================
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
 
-    // Formatage de la liste "LIVE" style Munky Checker
+    // Formatage de la liste de télémesure en temps réel
     let liveLogText = stats.recentChecks.length > 0 
-        ? stats.recentChecks.map(item => `${item.status === 'Available' ? '🟢' : '🔴'} \`${item.username}\` ── **${item.status}**`).join('\n')
-        : '`Attente du premier test...`';
+        ? stats.recentChecks.map(item => {
+            let icon = '🔴';
+            if (item.status === 'Available') icon = '🟢';
+            if (item.status === 'Error') icon = '⚠️';
+            return `${icon} \`${item.username}\` ── **${item.status}**`;
+        }).join('\n')
+        : '`[Attente du lancement du scan...]`';
+
+    const db = loadDatabase();
 
     const embed = new EmbedBuilder()
         .setTitle('🐒 MUNKY CHECKER - K2L Live Dashboard')
-        .setDescription('**Système de recherche & vérification en temps réel via InstantUsername**')
+        .setDescription('**Système de vérification & scan de pseudos OG en temps réel**')
         .addFields(
             { 
                 name: '📊 Métriques Live', 
-                value: `• **CHECKED** : \`${stats.checked}\` | **AVAILABLE** : \`${stats.available}\` | **SPEED** : \`${speed}/s\`\n• **STATUT** : ${stats.running ? '🟢 **LIVE**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
+                value: `• **CHECKED** : \`${stats.checked}\` | **AVAILABLE** : \`${stats.available}\` | **ERRORS** : \`${stats.failed}\`\n• **VITESSE** : \`${speed} req/s\` | **TAILLE** : \`${stats.length} car.\`\n• **STATUT** : ${stats.running ? '🟢 **SCAN EN COURS**' : '🔴 **INACTIF**'}\n• **Dernière Pépite** : \`${stats.lastHit}\``, 
                 inline: false 
             },
             {
-                name: '📡 Flux en direct (Derniers Pseudos Testés sur le Site)',
+                name: '📡 Flux en direct (Dernières requêtes instantusername.com)',
                 value: liveLogText,
                 inline: false
             },
             {
                 name: '📁 Base de Données',
-                value: `• Pseudos sauvegardés : \`${loadDatabase().savedUsernames.length}\``,
+                value: `• Pseudos sauvegardés : \`${db.savedUsernames.length}\``,
                 inline: true
             },
             {
@@ -137,7 +179,7 @@ function buildMainDashboard() {
             }
         )
         .setColor(stats.running ? '#2ECC71' : '#5865F2')
-        .setFooter({ text: 'K2L Live System • Direct InstantUsername API' })
+        .setFooter({ text: 'K2L Live System • Direct InstantUsername API Connection' })
         .setTimestamp();
 
     // Menu déroulant par catégories
@@ -147,17 +189,17 @@ function buildMainDashboard() {
             .setPlaceholder('📂 Choisir une catégorie d\'options...')
             .addOptions([
                 { label: '🔍 Live Checker & Scan', description: 'Gérer le scan et le flux en direct', value: 'cat_scan', emoji: '🔍' },
-                { label: '📂 Base de Données / Hits', description: 'Voir la liste des pseudos trouvés', value: 'cat_hits', emoji: '📁' },
-                { label: '🛡️ Modération & Sécurité', description: 'Anti-raid, purge, kick, ban, lock', value: 'cat_mod', emoji: '🛡️' },
-                { label: '📊 Télémetrie Système', description: 'Statistiques détaillées', value: 'cat_sys', emoji: '📊' }
+                { label: '📂 Base de Données / Hits', description: 'Voir la liste des pseudos trouvés et enregistrés', value: 'cat_hits', emoji: '📁' },
+                { label: '🛡️ Modération & Sécurité', description: 'Anti-raid, purge, kick, ban, lock/unlock', value: 'cat_mod', emoji: '🛡️' },
+                { label: '📊 Télémetrie Système', description: 'Statistiques avancées du serveur et du bot', value: 'cat_sys', emoji: '📊' }
             ])
     );
 
-    // Boutons
+    // Boutons de contrôle rapide
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId(stats.running ? 'btn_stop_scan' : 'btn_start_scan')
-            .setLabel(stats.running ? '🛑 Stop Scan' : '🚀 Démarrer Live Scan')
+            .setLabel(stats.running ? '🛑 Arrêter le Scan' : '🚀 Lancer Live Scan')
             .setStyle(stats.running ? ButtonStyle.Danger : ButtonStyle.Success),
         new ButtonBuilder()
             .setCustomId('btn_check_modal')
@@ -165,325 +207,260 @@ function buildMainDashboard() {
             .setStyle(ButtonStyle.Primary),
         new ButtonBuilder()
             .setCustomId('btn_refresh_panel')
-            .setLabel('🔄 Rafraîchir')
+            .setLabel('🔄 Rafraîchir Panel')
             .setStyle(ButtonStyle.Secondary)
     );
 
     return { embeds: [embed], components: [selectMenu, buttons] };
 }
 
-client.once('clientReady', () => {
-    console.log(`✅ BOT CONNECTÉ : ${client.user.tag}`);
+// Événement Démarrage du Bot
+client.once('ready', () => {
+    console.log(`✅ [DISCORD] Bot connecté avec succès sous le nom : ${client.user.tag}`);
+    client.user.setActivity('OG Usernames | ,help', { type: 3 }); // Watching
 });
 
-// --- 5. PROTECTION ANTI-RAID ---
+// ==========================================
+// 6. SÉCURITÉ ANTI-RAID
+// ==========================================
 client.on('guildMemberAdd', async (member) => {
     if (!antiRaidActive) return;
+    
+    // Détecte les comptes créés il y a moins de 3 jours
     const accountAgeDays = (Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24);
     if (accountAgeDays < 3) {
         try {
-            await member.kick('Mode Anti-Raid actif : Compte trop récent.');
+            await member.send(`⚠️ Tu as été expulsé de **${member.guild.name}** car le mode Anti-Raid est actif et ton compte est trop récent.`);
         } catch (e) {}
+        try {
+            await member.kick('Mode Anti-Raid actif : Compte trop récent (< 3 jours).');
+            console.log(`🛡️ [ANTI-RAID] Membre expulsé : ${member.user.tag}`);
+        } catch (e) {
+            console.error(`❌ Erreur expulsion Anti-Raid :`, e.message);
+        }
     }
 });
 
-// --- 6. INTERACTIONS (MENUS, BOUTONS, MODALS) ---
+// ==========================================
+// 7. GESTION DES INTERACTIONS (BOUTONS, MENUS, MODALS)
+// ==========================================
 client.on('interactionCreate', async (interaction) => {
-    // A. MENUS DÉROULANTS
-    if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
-        const val = interaction.values[0];
+    try {
+        // A. MENUS DÉROULANTS
+        if (interaction.isStringSelectMenu() && interaction.customId === 'menu_category') {
+            const val = interaction.values[0];
 
-        if (val === 'cat_scan') {
-            const embed = new EmbedBuilder()
-                .setTitle('🔍 Options de Vérification')
-                .setDescription('• Le mode **Live Scan** teste en boucle les pseudos auprès du site et met à jour l\'embed en direct[span_5](start_span)[span_5](end_span)[span_6](start_span)[span_6](end_span).\n• Le bouton **Check 1 Pseudo** permet de tester un nom spécifique immédiatement[span_7](start_span)[span_7](end_span)[span_8](start_span)[span_8](end_span).')
-                .setColor('#3498DB');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
-        }
-
-        if (val === 'cat_hits') {
-            const db = loadDatabase();
-            const list = db.savedUsernames.length > 0 
-                ? db.savedUsernames.slice(-10).map(i => `• \`${i.username}\` *(trouvé le ${new Date(i.timestamp).toLocaleDateString()})*`).join('\n')
-                : 'Aucun pseudo trouvé pour l\'instant.';
-
-            const embed = new EmbedBuilder()
-                .setTitle('📂 Base de Données - Pépites Sauvées')
-                .setDescription(list)
-                .setColor('#F1C40F');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
-        }
-
-        if (val === 'cat_mod') {
-            const embed = new EmbedBuilder()
-                .setTitle('🛡️ Commandes de Modération')
-                .setDescription('• `,antiraid <on/off>`\n• `,clear <1-100>`\n• `,kick <@membre>`\n• `,ban <@membre>`\n• `,lock` / `,unlock`')
-                .setColor('#E74C3C');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
-        }
-
-        if (val === 'cat_sys') {
-            const embed = new EmbedBuilder()
-                .setTitle('📊 Métriques Live')
-                .addFields(
-                    { name: 'Pseudos Vérifiés', value: `\`${stats.checked}\``, inline: true },
-                    { name: 'Pépites Libres', value: `\`${stats.available}\``, inline: true },
-                    { name: 'Erreurs API', value: `\`${stats.failed}\``, inline: true }
-                )
-                .setColor('#9B59B6');
-            return interaction.reply({ embeds: [embed], ephemeral: true });
-        }
-    }
-
-    // B. BOUTONS
-    if (interaction.isButton()) {
-        if (interaction.customId === 'btn_refresh_panel') {
-            return interaction.update(buildMainDashboard());
-        }
-
-        if (interaction.customId === 'btn_check_modal') {
-            const modal = new ModalBuilder()
-                .setCustomId('modal_check_single')
-                .setTitle('Vérifier un pseudo sur le site');
-
-            const input = new TextInputBuilder()
-                .setCustomId('input_username')
-                .setLabel('Pseudo à tester')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Ex: pbavq0dfhb')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
-        }
-
-        if (interaction.customId === 'btn_start_scan') {
-            const modal = new ModalBuilder()
-                .setCustomId('modal_start_scan')
-                .setTitle('Démarrer le Scanner Live');
-
-            const input = new TextInputBuilder()
-                .setCustomId('input_length')
-                .setLabel('Taille des pseudos (2 à 32)')
-                .setStyle(TextInputStyle.Short)
-                .setValue('4')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(input));
-            return interaction.showModal(modal);
-        }
-
-        if (interaction.customId === 'btn_stop_scan') {
-            if (autoTask) {
-                clearInterval(autoTask);
-                autoTask = null;
-                stats.running = false;
+            if (val === 'cat_scan') {
+                const embed = new EmbedBuilder()
+                    .setTitle('🔍 Mode Scanner en direct')
+                    .setDescription('• Cliquez sur **🚀 Lancer Live Scan** pour ouvrir un formulaire et définir la taille des pseudos à scanner en boucle.\n• Cliquez sur **🔍 Check 1 Pseudo** pour tester un nom d\'utilisateur immédiatement.')
+                    .setColor('#3498DB');
+                return interaction.reply({ embeds: [embed], ephemeral: true });
             }
-            return interaction.update(buildMainDashboard());
-        }
-    }
 
-    // C. MODALS
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'modal_check_single') {
-            const target = interaction.fields.getTextInputValue('input_username').toLowerCase();
-            await interaction.deferReply({ ephemeral: true });
+            if (val === 'cat_hits') {
+                const db = loadDatabase();
+                const list = db.savedUsernames.length > 0 
+                    ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\` ── *(enregistré le ${new Date(i.timestamp).toLocaleDateString()} à ${new Date(i.timestamp).toLocaleTimeString()})*`).join('\n')
+                    : 'Aucun pseudo disponible sauvegardé pour le moment.';
 
-            const isAvailable = await checkUsernameOnSite(target);
-            if (isAvailable === true) {
-                return interaction.editReply(`🎉 Résultat du site pour \`${target}\` : **DISPONIBLE** sur Discord !`);
-            } else if (isAvailable === false) {
-                return interaction.editReply(`❌ Résultat du site pour \`${target}\` : **DÉJÀ PRIS**.`);
-            } else {
-                return interaction.editReply(`⚠️ Erreur lors du test auprès du site.`);
+                const embed = new EmbedBuilder()
+                    .setTitle('📂 Base de Données - Pépites Détectées')
+                    .setDescription(list)
+                    .setColor('#F1C40F');
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (val === 'cat_mod') {
+                const embed = new EmbedBuilder()
+                    .setTitle('🛡️ Panneau de Modération')
+                    .setDescription('Commandes d\'administration à saisir dans le tchat :\n\n• `,antiraid <on/off>` : Active ou désactive l\'éjection des comptes récents.\n• `,clear <1-100>` : Supprime un paquet de messages.\n• `,kick <@membre>` : Expulse un membre.\n• `,ban <@membre>` : Bannit un membre.\n• `,lock` / `,unlock` : Verrouille ou déverrouille le salon actuel.')
+                    .setColor('#E74C3C');
+                return interaction.reply({ embeds: [embed], ephemeral: true });
+            }
+
+            if (val === 'cat_sys') {
+                const uptime = Math.floor(client.uptime / 1000);
+                const embed = new EmbedBuilder()
+                    .setTitle('📊 Télémetrie & Performances')
+                    .addFields(
+                        { name: 'Uptime Bot', value: `\`${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s\``, inline: true },
+                        { name: 'Total Scannés', value: `\`${stats.checked}\``, inline: true },
+                        { name: 'Hits Réussis', value: `\`${stats.available}\``, inline: true },
+                        { name: 'Erreurs API Network', value: `\`${stats.failed}\``, inline: true },
+                        { name: 'Serveurs', value: `\`${client.guilds.cache.size}\``, inline: true },
+                        { name: 'RAM Utilisée', value: `\`${(process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2)} MB\``, inline: true }
+                    )
+                    .setColor('#9B59B6');
+                return interaction.reply({ embeds: [embed], ephemeral: true });
             }
         }
 
-        if (interaction.customId === 'modal_start_scan') {
-            const len = parseInt(interaction.fields.getTextInputValue('input_length'));
-            if (!len || isNaN(len) || len < 2 || len > 32) {
-                return interaction.reply({ content: '❌ Entrez un nombre valide entre 2 et 32.', ephemeral: true });
+        // B. BOUTONS
+        if (interaction.isButton()) {
+            if (interaction.customId === 'btn_refresh_panel') {
+                return interaction.update(buildMainDashboard());
             }
 
-            if (autoTask) clearInterval(autoTask);
+            if (interaction.customId === 'btn_check_modal') {
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_check_single')
+                    .setTitle('Check rapide de pseudo');
 
-            stats.running = true;
-            stats.length = len;
-            stats.checked = 0;
-            stats.available = 0;
-            stats.failed = 0;
-            stats.startTime = Date.now();
-            stats.recentChecks = [];
+                const input = new TextInputBuilder()
+                    .setCustomId('input_username')
+                    .setLabel('Entrez le pseudo à vérifier :')
+                    .setStyle(TextInputStyle.Short)
+                    .setPlaceholder('Exemple: k2l_master')
+                    .setRequired(true)
+                    .setMaxLength(32);
 
-            await interaction.reply({ content: `🚀 Scanner Live démarré pour des pseudos de **${len}** caractères !`, ephemeral: true });
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
+                return interaction.showModal(modal);
+            }
 
-            // Envoie le message de dashboard initial qui sera édité en temps réel
-            liveMessage = await interaction.channel.send(buildMainDashboard());
+            if (interaction.customId === 'btn_start_scan') {
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_start_scan')
+                    .setTitle('Démarrer le Live Scanner');
 
-            autoTask = setInterval(async () => {
-                const candidate = generateUsername(len);
-                stats.checked++;
+                const input = new TextInputBuilder()
+                    .setCustomId('input_length')
+                    .setLabel('Longueur des pseudos (2 à 32) :')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue('4')
+                    .setRequired(true)
+                    .setMaxLength(2);
 
-                const isAvailable = await checkUsernameOnSite(candidate);
-                const statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
+                modal.addComponents(new ActionRowBuilder().addComponents(input));
+                return interaction.showModal(modal);
+            }
 
-                // Met à jour la liste des 6 derniers pseudos
-                stats.recentChecks.unshift({ username: candidate, status: statusText });
-                if (stats.recentChecks.length > 6) stats.recentChecks.pop();
+            if (interaction.customId === 'btn_stop_scan') {
+                if (autoTask) {
+                    clearInterval(autoTask);
+                    autoTask = null;
+                    stats.running = false;
+                }
+                return interaction.update(buildMainDashboard());
+            }
+        }
+
+        // C. SOUMISSION DES MODALS (FORMULAIRES)
+        if (interaction.isModalSubmit()) {
+            if (interaction.customId === 'modal_check_single') {
+                const target = interaction.fields.getTextInputValue('input_username').toLowerCase().trim();
+                await interaction.deferReply({ ephemeral: true });
+
+                const isAvailable = await checkUsernameOnSite(target);
 
                 if (isAvailable === true) {
-                    stats.available++;
-                    stats.lastHit = candidate;
+                    return interaction.editReply(`🎉 Le pseudo \`${target}\` est **DISPONIBLE / DISCORD OG** !`);
+                } else if (isAvailable === false) {
+                    return interaction.editReply(`❌ Le pseudo \`${target}\` est **DÉJÀ PRIS**.`);
+                } else {
+                    return interaction.editReply(`⚠️ Impossible de vérifier \`${target}\` pour le moment (Erreur réseau/API).`);
+                }
+            }
 
-                    const db = loadDatabase();
-                    if (!db.savedUsernames.some(i => i.username === candidate)) {
-                        db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
-                        saveDatabase(db);
+            if (interaction.customId === 'modal_start_scan') {
+                const len = parseInt(interaction.fields.getTextInputValue('input_length'));
+                if (!len || isNaN(len) || len < 2 || len > 32) {
+                    return interaction.reply({ content: '❌ Longueur invalide ! Choisissez un chiffre entre 2 et 32.', ephemeral: true });
+                }
+
+                if (autoTask) clearInterval(autoTask);
+
+                stats.running = true;
+                stats.length = len;
+                stats.checked = 0;
+                stats.available = 0;
+                stats.failed = 0;
+                stats.startTime = Date.now();
+                stats.recentChecks = [];
+
+                await interaction.reply({ content: `🚀 Scanner Live lancé pour des pseudos de **${len}** caractères !`, ephemeral: true });
+
+                // Création du message qui servira de Dashboard dynamique mis à jour en direct
+                liveMessage = await interaction.channel.send(buildMainDashboard());
+
+                autoTask = setInterval(async () => {
+                    const candidate = generateUsername(len);
+                    stats.checked++;
+
+                    const isAvailable = await checkUsernameOnSite(candidate);
+                    let statusText = 'Taken';
+                    if (isAvailable === true) statusText = 'Available';
+                    if (isAvailable === null) statusText = 'Error';
+
+                    // Met à jour la pile des 6 derniers pseudos testés
+                    stats.recentChecks.unshift({ username: candidate, status: statusText });
+                    if (stats.recentChecks.length > 6) stats.recentChecks.pop();
+
+                    // Si une pépite est trouvée !
+                    if (isAvailable === true) {
+                        stats.available++;
+                        stats.lastHit = candidate;
+
+                        const db = loadDatabase();
+                        if (!db.savedUsernames.some(i => i.username === candidate)) {
+                            db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
+                            saveDatabase(db);
+                        }
+
+                        const alertEmbed = new EmbedBuilder()
+                            .setTitle('🎉 PÉPITE OG DISPONIBLE DÉTECTÉE !')
+                            .setDescription(`Un pseudo libre a été trouvé en direct !\n\n✨ Pseudo : \`${candidate}\``)
+                            .setColor('#2ECC71')
+                            .setTimestamp();
+
+                        await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **HIT DÉTECTÉ !**`, embeds: [alertEmbed] });
                     }
 
-                    const alertEmbed = new EmbedBuilder()
-                        .setTitle('🎉 PÉPITE DISPONIBLE DÉTECTÉE !')
-                        .setDescription(`Un pseudo libre a été validé sur le site !\n\n✨ Pseudo : \`${candidate}\``)
-                        .setColor('#2ECC71')
-                        .setTimestamp();
-
-                    await interaction.channel.send({ content: `<@${interaction.user.id}> 🚨 **PÉPITE TROUVÉE !**`, embeds: [alertEmbed] });
-                }
-
-                // Édition dynamique du message Dashboard en direct (Toutes les 4 secondes)
-                if (liveMessage) {
-                    liveMessage.edit(buildMainDashboard()).catch(() => {});
-                }
-            }, 4000);
+                    // Mise à jour continue de l'embed principal
+                    if (liveMessage) {
+                        liveMessage.edit(buildMainDashboard()).catch(() => {});
+                    }
+                }, 3500); // Exécution toutes les 3.5 secondes pour respecter les limites de rate-limit
+            }
         }
+    } catch (err) {
+        console.error('❌ Erreur lors du traitement d\'une interaction :', err);
     }
 });
 
-// --- 7. COMMANDES TEXTE (PREFIX ,) ---
+// ==========================================
+// 8. COMMANDES TEXTE (PREFIX ,)
+// ==========================================
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
+    // Commande HELP / PANEL / DASHBOARD
     if (command === 'help' || command === 'panel' || command === 'dashboard') {
         liveMessage = await message.reply(buildMainDashboard());
         return;
     }
 
+    // Commande AUTO (Lancement direct en mode texte)
     if (command === 'auto') {
         const subAction = args[0]?.toLowerCase();
 
-        if (subAction === 'off') {
+        if (subAction === 'off' || subAction === 'stop') {
             if (autoTask) {
                 clearInterval(autoTask);
                 autoTask = null;
                 stats.running = false;
             }
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-            return message.reply('🛑 **Scan automatique ARRÊTÉ**.');
+            return message.reply('🛑 **Scanner automatique arrêté avec succès.**');
         }
 
         const length = parseInt(subAction);
         if (!length || isNaN(length) || length < 2 || length > 32) {
-            return message.reply('❌ **Usage :** `,auto <longueur>` ou `,auto off`');
+            return message.reply('❌ **Usage correct :** `,auto <longueur (2-32)>` ou `,auto off`');
         }
 
-        if (autoTask) clearInterval(autoTask);
-
-        stats.running = true;
-        stats.length = length;
-        stats.checked = 0;
-        stats.available = 0;
-        stats.startTime = Date.now();
-        stats.recentChecks = [];
-
-        await message.reply(`🚀 **Live Scanner démarré** pour **${length}** caractères.`);
-        liveMessage = await message.channel.send(buildMainDashboard());
-
-        autoTask = setInterval(async () => {
-            const candidate = generateUsername(length);
-            stats.checked++;
-
-            const isAvailable = await checkUsernameOnSite(candidate);
-            const statusText = isAvailable === true ? 'Available' : (isAvailable === false ? 'Taken' : 'Error');
-
-            stats.recentChecks.unshift({ username: candidate, status: statusText });
-            if (stats.recentChecks.length > 6) stats.recentChecks.pop();
-
-            if (isAvailable === true) {
-                stats.available++;
-                stats.lastHit = candidate;
-
-                const db = loadDatabase();
-                if (!db.savedUsernames.some(i => i.username === candidate)) {
-                    db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
-                    saveDatabase(db);
-                }
-
-                const alertEmbed = new EmbedBuilder()
-                    .setTitle('🎉 PÉPITE DISPONIBLE DÉTECTÉE !')
-                    .setDescription(`✨ Pseudo libre : \`${candidate}\``)
-                    .setColor('#2ECC71')
-                    .setTimestamp();
-
-                await message.channel.send({ content: `<@${message.author.id}> 🚨 **HIT TROUVÉ !**`, embeds: [alertEmbed] });
-            }
-
-            if (liveMessage) {
-                liveMessage.edit(buildMainDashboard()).catch(() => {});
-            }
-        }, 4000);
-
-        return;
-    }
-
-    if (command === 'check') {
-        const target = args[0]?.toLowerCase();
-        if (!target) return message.reply('❌ Exemple : `,check pbavq0dfhb`');
-
-        const loading = await message.reply(`🔍 Test de \`${target}\` sur le site...`);
-        const isAvailable = await checkUsernameOnSite(target);
-
-        if (isAvailable === true) return loading.edit(`🎉 Résultat : \`${target}\` est **DISPONIBLE** !`);
-        if (isAvailable === false) return loading.edit(`❌ Résultat : \`${target}\` est **DÉJÀ PRIS**.`);
-        return loading.edit(`⚠️ Erreur du site.`);
-    }
-
-    if (command === 'lookup') {
-        const db = loadDatabase();
-        if (!db.savedUsernames.length) return message.reply('📂 Aucun pseudo trouvé.');
-        const list = db.savedUsernames.slice(-10).map(i => `• \`${i.username}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setTitle('📂 Dernières Pépites').setDescription(list).setColor('#3498DB')] });
-    }
-
-    // MODÉRATION
-    if (command === 'clear') {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) return message.reply("❌ Permission requise.");
-        const count = parseInt(args[0]);
-        if (!count || count < 1 || count > 100) return message.reply("❌ Nombre entre 1 et 100.");
-        await message.channel.bulkDelete(count + 1, true).catch(() => {});
-        const msg = await message.channel.send(`🧹 **${count}** messages supprimés.`);
-        setTimeout(() => msg.delete().catch(() => {}), 3000);
-    }
-
-    if (command === 'antiraid') {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return message.reply("❌ Administrateur requis.");
-        antiRaidActive = (args[0]?.toLowerCase() === 'on');
-        return message.reply(`🛡️ Anti-Raid : **${antiRaidActive ? 'ACTIVÉ 🟢' : 'DÉSACTIVÉ 🔴'}**`);
-    }
-
-    if (command === 'kick') {
-        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply("❌ Permission requise.");
-        const member = message.mentions.members.first();
-        if (member) { await member.kick(); message.reply(`✅ **${member.user.tag}** expulsé.`); }
-    }
-
-    if (command === 'ban') {
-        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply("❌ Permission requise.");
-        const member = message.mentions.members.first();
-        if (member) { await member.ban(); message.reply(`✅ **${member.user.tag}** banni.`); }
-    }
-
-    if (command === 'lock') {
-        if (!mes
+        if (autoTask) clearInterva
