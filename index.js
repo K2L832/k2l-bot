@@ -343,4 +343,4 @@ client.on('messageCreate', async (message) => {
 });
 
 // Mets ton TOKEN Discord ici
-client.login("TON_DISCORD_TOKEN_ICI");
+client.login(process.env.DISCORD_TOKEN);
