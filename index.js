@@ -14,6 +14,7 @@ const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
+const puppeteer = require('puppeteer');
 
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 const app = express();
@@ -38,7 +39,7 @@ app.get('/', (req, res) => {
                 <div class="card">
                     <h1>K2L Scanner Pro</h1>
                     <p>Discord Username Checker Engine • 24/7</p>
-                    <div class="status">● EN LIGNE SUR RENDER</div>
+                    <div class="status">● EN LIGNE SUR RENDER (PUPPETEER ACTIF)</div>
                 </div>
             </body>
         </html>
@@ -82,7 +83,31 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. ÉTAT GLOBAL DU SCANNER
+// 4. MOTEUR PUPPETEER (CONTOURNEMENT CLOUDFLARE)
+let browserInstance = null;
+let activePage = null;
+
+async function initBrowser() {
+    if (!browserInstance) {
+        console.log('🚀 Démarrage du navigateur Chrome Puppeteer...');
+        browserInstance = await puppeteer.launch({
+            headless: 'new',
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--disable-gpu'
+            ]
+        });
+        activePage = await browserInstance.newPage();
+        await activePage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        await activePage.goto('https://instantusername.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        console.log('✅ Navigateur prêt pour le contournement anti-bot.');
+    }
+}
+
+// 5. ÉTAT GLOBAL DU SCANNER
 let autoTask = null;
 let liveMessage = null;
 
@@ -116,41 +141,48 @@ function generateUsername(length) {
     return result;
 }
 
-// VÉRIFICATEUR ULTRA FIABLE (Case Discord du site de référence)
+// VÉRIFICATEUR VIA LE NAVIGATEUR (0 Erreur API)
 async function checkUsername(username) {
-    const userAgents = [
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15'
-    ];
-
     try {
-        const response = await axios.get(`https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`, {
-            timeout: 5000,
-            headers: {
-                'User-Agent': userAgents[Math.floor(Math.random() * userAgents.length)],
-                'Accept': 'application/json, text/plain, */*',
-                'Referer': 'https://instantusername.com/',
-                'Origin': 'https://instantusername.com'
-            }
-        });
+        if (!activePage) await initBrowser();
 
-        if (response.data && typeof response.data.available !== 'undefined') {
-            if (response.data.available === true) {
-                return true; // Disponible (Hit)
-            } else {
-                stats.taken++;
-                return false; // Pris
+        const isAvailable = await activePage.evaluate(async (targetUser) => {
+            try {
+                const response = await fetch(`https://instantusername.com/api/check?username=${encodeURIComponent(targetUser)}&service=discord`, {
+                    headers: { 'Accept': 'application/json, text/plain, */*' }
+                });
+                const data = await response.json();
+                if (data && typeof data.available !== 'undefined') {
+                    return data.available === true;
+                }
+                return null;
+            } catch (e) {
+                return null;
             }
+        }, username);
+
+        if (isAvailable === true) {
+            return true; // Disponible
+        } else if (isAvailable === false) {
+            stats.taken++;
+            return false; // Pris
+        } else {
+            stats.failed++;
+            return 'ERROR';
         }
-        stats.taken++;
-        return false;
     } catch (err) {
+        // Redémarrage automatique du navigateur en cas de pépin
+        activePage = null;
+        if (browserInstance) {
+            await browserInstance.close().catch(() => {});
+            browserInstance = null;
+        }
         stats.failed++;
         return 'ERROR';
     }
 }
 
-// 5. PANNEAU DE CONTRÔLE EMBED PRO (STYLE OGTOOL / MUNKY)
+// 6. PANNEAU DE CONTRÔLE EMBED PRO
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -182,7 +214,7 @@ function buildMainDashboard() {
             { name: 'FLUX EN DIRECT (TESTS EN TEMPS RÉEL)', value: liveLogText, inline: false },
             { name: 'BASE DE DONNÉES', value: `Pépites sauvées: \`${db.savedUsernames.length}\``, inline: true }
         )
-        .setFooter({ text: 'K2L Scanner Engine • 0 Erreur API' })
+        .setFooter({ text: 'K2L Scanner Engine • Contournement Cloudflare Actif' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -192,7 +224,7 @@ function buildMainDashboard() {
             .addOptions([
                 { label: '🔍 Contrôle du Scan', value: 'nav_scan', description: 'Gérer le lancement et l\'arrêt' },
                 { label: '📁 Pépites Enregistrées', value: 'nav_hits', description: 'Voir les pseudos libres trouvés' },
-                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et de la connexion' }
+                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et du moteur' }
             ])
     );
 
@@ -217,6 +249,7 @@ function buildMainDashboard() {
 client.once('ready', () => {
     console.log(`✅ [DISCORD] K2L Scanner connecté : ${client.user.tag}`);
     client.user.setActivity('Scanner Discord Pro', { type: 3 });
+    initBrowser(); // Pré-charge le navigateur au démarrage
 });
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -225,13 +258,13 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'nav_scan') return interaction.reply({ content: '• Utilisez les boutons sous le panneau pour démarrer ou arrêter le scan.', ephemeral: true });
             if (val === 'nav_hits') {
                 const db = loadDatabase();
-                const list = db.savedUsernames.length > 0 ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n') : 'Aucune pépite enregistrée pour le moment.';
+                const list = db.savedUsernames.length > 0 ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n') : 'Aucune pépite enregistrée.';
                 return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📁 PÉPITES ENREGISTRÉES').setDescription(list).setColor('#5865F2')], ephemeral: true });
             }
             if (val === 'nav_sys') {
                 const uptime = Math.floor(process.uptime() / 60);
                 const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Statut API : \`100% Opérationnel\``, ephemeral: true });
+                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Moteur : \`Puppeteer Headless Chrome\``, ephemeral: true });
             }
         }
 
@@ -292,7 +325,6 @@ client.on('interactionCreate', async (interaction) => {
                     if (isAvailable === true) statusText = 'Available';
                     if (isAvailable === 'ERROR') statusText = 'Error';
 
-                    // Ajout au flux en direct (affiche TOUT ce qui est testé)
                     stats.recentChecks.unshift({ username: candidate, status: statusText });
                     if (stats.recentChecks.length > 8) stats.recentChecks.pop();
 
@@ -309,8 +341,7 @@ client.on('interactionCreate', async (interaction) => {
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    // Vitesse fluide et sécurisée (1 à 2 secondes entre chaque test)
-                    const delay = Math.floor(Math.random() * 1000) + 1200;
+                    const delay = Math.floor(Math.random() * 800) + 1000;
                     autoTask = setTimeout(runScanLoop, delay);
                 };
 
@@ -322,7 +353,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// COMMANDES TEXTUELLES STRICTEMENT LIMITÉES (auto, check, help)
+// COMMANDES TEXTUELLES : ,help, ,auto, ,check
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
@@ -333,12 +364,12 @@ client.on('messageCreate', async (message) => {
     if (command === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setTitle('📖 K2L SCANNER - GUIDE DES COMMANDES')
-            .setDescription('Voici les commandes disponibles pour utiliser le scanner de pépites :')
+            .setDescription('Voici la liste des commandes du scanner professionnel :')
             .addFields(
-                { name: '🚀 `,auto <longueur>`', value: 'Lance le scanner automatique en direct pour la taille de caractères choisie (ex: `,auto 4`) et affiche le panneau de contrôle interactif.' },
+                { name: '🚀 `,auto <longueur>`', value: 'Lance le scanner automatique en direct pour la taille choisie (ex: `,auto 4`) et affiche le panneau de contrôle interactif.' },
                 { name: '🛑 `,auto off` (ou `stop`)', value: 'Arrête instantanément le scanner en cours.' },
                 { name: '🔍 `,check <pseudo>`', value: 'Vérifie instantanément un pseudo spécifique (ex: `,check monpseudo`).' },
-                { name: '📖 `,help`', value: 'Affiche cette aide.' }
+                { name: '📖 `,help`', value: 'Affiche ce guide d\'aide.' }
             )
             .setColor('#5865F2')
             .setFooter({ text: 'K2L Scanner • Mode Professionnel' });
@@ -346,7 +377,7 @@ client.on('messageCreate', async (message) => {
         return message.reply({ embeds: [helpEmbed] });
     }
 
-    // 2. COMMANDE AUTO (Lance le scan et affiche l'embed)
+    // 2. COMMANDE AUTO
     if (command === 'auto') {
         const subAction = args[0]?.toLowerCase();
 
@@ -393,7 +424,7 @@ client.on('messageCreate', async (message) => {
                 stats.lastHit = candidate;
                 const db = loadDatabase();
                 if (!db.savedUsernames.some(i => i.username === candidate)) {
-                    db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() >> 0 }); // clean timestamp
+                    db.savedUsernames.push({ username: candidate, timestamp: new Date().toISOString() });
                     saveDatabase(db);
                 }
                 await message.channel.send({ content: `<@${message.author.id}> 🚨 **PÉPITE DISCORD TROUVÉE : \`${candidate}\`**` });
@@ -401,7 +432,7 @@ client.on('messageCreate', async (message) => {
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const delay = Math.floor(Math.random() * 1000) + 1200;
+            const delay = Math.floor(Math.random() * 800) + 1000;
             autoTask = setTimeout(runScanLoopMsg, delay);
         };
 
@@ -409,7 +440,7 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // 3. COMMANDE CHECK UNITAIRE
+    // 3. COMMANDE CHECK
     if (command === 'check') {
         const target = args[0]?.toLowerCase();
         if (!target) return message.reply('❌ Utilisation : `,check <pseudo>`');
