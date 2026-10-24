@@ -11,45 +11,9 @@ const {
     TextInputStyle 
 } = require('discord.js');
 const axios = require('axios');
-const express = require('express');
 const fs = require('fs');
 const path = require('path');
 
-// 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get('/', (req, res) => {
-    res.status(200).send(`
-        <!DOCTYPE html>
-        <html lang="fr">
-            <head>
-                <meta charset="UTF-8">
-                <title>K2L Scanner Engine</title>
-                <style>
-                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #090a0f; color: #e1e7ed; text-align: center; padding-top: 60px; }
-                    .card { background: #12151e; display: inline-block; padding: 32px; border-radius: 10px; border: 1px solid #1f2638; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
-                    h1 { color: #5865F2; margin-bottom: 8px; font-size: 24px; }
-                    p { color: #8a96a3; font-size: 14px; margin-bottom: 20px; }
-                    .status { display: inline-block; padding: 6px 14px; background: #2ecc711a; border: 1px solid #2ecc71; color: #2ecc71; border-radius: 20px; font-size: 12px; font-weight: 600; }
-                </style>
-            </head>
-            <body>
-                <div class="card">
-                    <h1>K2L Scanner Pro</h1>
-                    <p>Discord Username Checker Engine • 24/7</p>
-                    <div class="status">● EN LIGNE SUR RENDER (PROXY ROTATION ACTIF)</div>
-                </div>
-            </body>
-        </html>
-    `);
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🌐 [EXPRESS] Serveur Web actif sur le port ${PORT}`);
-});
-
-// 2. CLIENT DISCORD
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -59,8 +23,6 @@ const client = new Client({
 });
 
 const PREFIX = ',';
-
-// 3. BASE DE DONNÉES LOCALE (HITS)
 const DB_FILE = path.join(__dirname, 'k2l_database.json');
 
 function loadDatabase() {
@@ -82,30 +44,6 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. GESTIONNAIRE DE PROXIES DYNAMIQUES
-let workingProxies = [];
-let proxyIndex = 0;
-
-async function refreshProxyPool() {
-    try {
-        console.log('🔄 Récupération d\'une nouvelle liste de proxies...');
-        const res = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all', { timeout: 5000 });
-        if (res.data) {
-            const raw = res.data.split('\r\n').filter(p => p.trim() !== '');
-            // On sélectionne un échantillon pour tester
-            workingProxies = raw.slice(0, 30);
-            console.log(`✅ ${workingProxies.length} proxies chargés dans le pool.`);
-        }
-    } catch (e) {
-        console.log('⚠️ Impossible de rafraîchir les proxies, utilisation du mode direct.');
-    }
-}
-
-// Rafraîchir les proxies au démarrage puis toutes les 10 minutes
-refreshProxyPool();
-setInterval(refreshProxyPool, 10 * 60 * 1000);
-
-// 5. ÉTAT GLOBAL DU SCANNER
 let autoTask = null;
 let liveMessage = null;
 
@@ -121,70 +59,58 @@ let stats = {
     lastHit: 'Aucun'
 };
 
-// GÉNÉRATEUR DE PSEUDOS INTELLIGENT
 function generateUsername(length) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
     let result = '';
-    
     for (let i = 0; i < length; i++) {
         result += chars.charAt(Math.floor(Math.random() * chars.length));
     }
-
     if (length >= 3 && Math.random() < 0.30) {
         const special = Math.random() < 0.7 ? '.' : '_';
         const pos = Math.floor(Math.random() * (length - 2)) + 1;
         result = result.substring(0, pos) + special + result.substring(pos + 1);
     }
-
     return result;
 }
 
-// VÉRIFICATEUR AVEC ROTATION DE PROXY & SECOURS DIRECT
+// Vérification directe depuis l'IP de ta box
 async function checkUsername(username) {
-    const targetUrl = `https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`;
-
-    // Si on a des proxies, on essaie via un proxy du pool
-    let proxyUrl = workingProxies.length > 0 ? `https://${workingProxies[proxyIndex % workingProxies.length]}` : null;
-    proxyIndex++;
-
-    const endpoints = [
-        proxyUrl ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : null,
-        targetUrl
-    ].filter(Boolean);
-
-    for (const url of endpoints) {
-        try {
-            const response = await axios.get(url, {
-                timeout: 3000,
+    try {
+        const response = await axios.post('https://discord.com/api/v9/unique-username/username-attempt-unauthed', 
+            { username: username },
+            {
+                timeout: 5000,
                 headers: {
+                    'Content-Type': 'application/json',
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-                    'Accept': 'application/json, text/plain, */*'
-                }
-            });
-
-            let data = response.data;
-            if (typeof data === 'string') {
-                try { data = JSON.parse(data); } catch (err) {}
-            }
-
-            if (data && typeof data.available !== 'undefined') {
-                if (data.available === true) {
-                    return true; // Disponible (Hit)
-                } else {
-                    stats.taken++;
-                    return false; // Pris
+                    'Accept': '*/*',
+                    'Accept-Language': 'fr-FR,fr;q=0.9',
+                    'Origin': 'https://discord.com',
+                    'Referer': 'https://discord.com/'
                 }
             }
-        } catch (e) {
-            continue; // Passe au suivant si le proxy échoue
+        );
+
+        if (response.data && typeof response.data.taken !== 'undefined') {
+            if (response.data.taken === false) {
+                return true; // Libre
+            } else {
+                stats.taken++;
+                return false; // Pris
+            }
         }
+        stats.taken++;
+        return false;
+    } catch (err) {
+        if (err.response && err.response.data && err.response.data.taken === true) {
+            stats.taken++;
+            return false;
+        }
+        stats.failed++;
+        return 'ERROR';
     }
-
-    stats.failed++;
-    return 'ERROR';
 }
 
-// 6. PANNEAU DE CONTRÔLE EMBED PRO
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -213,22 +139,11 @@ function buildMainDashboard() {
                 value: `\`\`\`yaml\nAnalysés:  ${stats.checked}\nLibres:    ${stats.available}\nPris:      ${stats.taken}\nErreurs:   ${stats.failed}\n\`\`\``, 
                 inline: false 
             },
-            { name: 'FLUX EN DIRECT (TESTS EN TEMPS RÉEL)', value: liveLogText, inline: false },
+            { name: 'FLUX EN DIRECT', value: liveLogText, inline: false },
             { name: 'BASE DE DONNÉES', value: `Pépites sauvées: \`${db.savedUsernames.length}\``, inline: true }
         )
-        .setFooter({ text: 'K2L Scanner Engine • Mode Pro Stable' })
+        .setFooter({ text: 'K2L Scanner Engine • Mode Local Résidentiel' })
         .setTimestamp();
-
-    const selectMenu = new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-            .setCustomId('menu_scanner')
-            .setPlaceholder('Navigation du Scanner...')
-            .addOptions([
-                { label: '🔍 Contrôle du Scan', value: 'nav_scan', description: 'Gérer le lancement et l\'arrêt' },
-                { label: '📁 Pépites Enregistrées', value: 'nav_hits', description: 'Voir les pseudos libres trouvés' },
-                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et du moteur' }
-            ])
-    );
 
     const buttons = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -245,30 +160,15 @@ function buildMainDashboard() {
             .setStyle(ButtonStyle.Secondary)
     );
 
-    return { embeds: [embed], components: [selectMenu, buttons] };
+    return { embeds: [embed], components: [buttons] };
 }
 
 client.once('ready', () => {
-    console.log(`✅ [DISCORD] K2L Scanner connecté : ${client.user.tag}`);
-    client.user.setActivity('Scanner Discord Pro', { type: 3 });
+    console.log(`✅ K2L Scanner est connecté sur ton PC : ${client.user.tag}`);
 });
+
 client.on('interactionCreate', async (interaction) => {
     try {
-        if (interaction.isStringSelectMenu() && interaction.customId === 'menu_scanner') {
-            const val = interaction.values[0];
-            if (val === 'nav_scan') return interaction.reply({ content: '• Utilisez les boutons sous le panneau pour démarrer ou arrêter le scan.', ephemeral: true });
-            if (val === 'nav_hits') {
-                const db = loadDatabase();
-                const list = db.savedUsernames.length > 0 ? db.savedUsernames.slice(-15).reverse().map(i => `• \`${i.username}\``).join('\n') : 'Aucune pépite enregistrée.';
-                return interaction.reply({ embeds: [new EmbedBuilder().setTitle('📁 PÉPITES ENREGISTRÉES').setDescription(list).setColor('#5865F2')], ephemeral: true });
-            }
-            if (val === 'nav_sys') {
-                const uptime = Math.floor(process.uptime() / 60);
-                const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Proxies actifs : \`${workingProxies.length}\``, ephemeral: true });
-            }
-        }
-
         if (interaction.isButton()) {
             if (interaction.customId === 'btn_refresh_panel') return interaction.update(buildMainDashboard());
             if (interaction.customId === 'btn_check_modal') {
@@ -342,7 +242,7 @@ client.on('interactionCreate', async (interaction) => {
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    const delay = Math.floor(Math.random() * 1000) + 1200;
+                    const delay = Math.floor(Math.random() * 1500) + 1500;
                     autoTask = setTimeout(runScanLoop, delay);
                 };
 
@@ -354,44 +254,35 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// COMMANDES TEXTUELLES : ,help, ,auto, ,check
 client.on('messageCreate', async (message) => {
     if (message.author.bot || !message.content.startsWith(PREFIX)) return;
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // 1. COMMANDE HELP
     if (command === 'help') {
         const helpEmbed = new EmbedBuilder()
             .setTitle('📖 K2L SCANNER - GUIDE DES COMMANDES')
-            .setDescription('Voici la liste des commandes du scanner professionnel :')
+            .setDescription('Voici les commandes disponibles :')
             .addFields(
-                { name: '🚀 `,auto <longueur>`', value: 'Lance le scanner automatique en direct pour la taille choisie (ex: `,auto 4`) et affiche le panneau de contrôle interactif.' },
-                { name: '🛑 `,auto off` (ou `stop`)', value: 'Arrête instantanément le scanner en cours.' },
-                { name: '🔍 `,check <pseudo>`', value: 'Vérifie instantanément un pseudo spécifique (ex: `,check monpseudo`).' },
-                { name: '📖 `,help`', value: 'Affiche ce guide d\'aide.' }
+                { name: '🚀 `,auto <longueur>`', value: 'Lance le scanner automatique et affiche le tableau de bord.' },
+                { name: '🛑 `,auto off`', value: 'Arrête le scanner en cours.' },
+                { name: '🔍 `,check <pseudo>`', value: 'Vérifie un pseudo spécifique.' }
             )
-            .setColor('#5865F2')
-            .setFooter({ text: 'K2L Scanner • Mode Professionnel' });
-
+            .setColor('#5865F2');
         return message.reply({ embeds: [helpEmbed] });
     }
 
-    // 2. COMMANDE AUTO
     if (command === 'auto') {
         const subAction = args[0]?.toLowerCase();
-
         if (subAction === 'off' || subAction === 'stop') {
             if (autoTask) { clearTimeout(autoTask); autoTask = null; stats.running = false; }
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
-            return message.reply('🛑 **Scanner arrêté avec succès.**');
+            return message.reply('🛑 **Scanner arrêté.**');
         }
 
         const length = parseInt(subAction);
-        if (!length || isNaN(length) || length < 2 || length > 32) {
-            return message.reply('❌ Utilisation correcte : `,auto <longueur>` (ex: `,auto 4`) ou `,auto off`');
-        }
+        if (!length || isNaN(length) || length < 2 || length > 32) return message.reply('❌ Utilisation : `,auto <longueur>` (ex: `,auto 4`)');
 
         if (autoTask) clearTimeout(autoTask);
         stats.running = true;
@@ -433,7 +324,7 @@ client.on('messageCreate', async (message) => {
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const delay = Math.floor(Math.random() * 1000) + 1200;
+            const delay = Math.floor(Math.random() * 1500) + 1500;
             autoTask = setTimeout(runScanLoopMsg, delay);
         };
 
@@ -441,7 +332,6 @@ client.on('messageCreate', async (message) => {
         return;
     }
 
-    // 3. COMMANDE CHECK
     if (command === 'check') {
         const target = args[0]?.toLowerCase();
         if (!target) return message.reply('❌ Utilisation : `,check <pseudo>`');
@@ -452,10 +342,5 @@ client.on('messageCreate', async (message) => {
     }
 });
 
-const TOKEN = process.env.DISCORD_TOKEN;
-if (!TOKEN) {
-    console.error("❌ DISCORD_TOKEN manquant !");
-    process.exit(1);
-}
-
-client.login(TOKEN);
+// Mets ton TOKEN Discord ici
+client.login("TON_DISCORD_TOKEN_ICI");
