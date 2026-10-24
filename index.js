@@ -38,7 +38,7 @@ app.get('/', (req, res) => {
                 <div class="card">
                     <h1>K2L Scanner Pro</h1>
                     <p>Discord Username Checker Engine • 24/7</p>
-                    <div class="status">● EN LIGNE SUR RENDER (MULTI-PROXY ACTIF)</div>
+                    <div class="status">● EN LIGNE SUR RENDER (PROXY ROTATION ACTIF)</div>
                 </div>
             </body>
         </html>
@@ -82,7 +82,30 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. ÉTAT GLOBAL DU SCANNER
+// 4. GESTIONNAIRE DE PROXIES DYNAMIQUES
+let workingProxies = [];
+let proxyIndex = 0;
+
+async function refreshProxyPool() {
+    try {
+        console.log('🔄 Récupération d\'une nouvelle liste de proxies...');
+        const res = await axios.get('https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=3000&country=all&ssl=all&anonymity=all', { timeout: 5000 });
+        if (res.data) {
+            const raw = res.data.split('\r\n').filter(p => p.trim() !== '');
+            // On sélectionne un échantillon pour tester
+            workingProxies = raw.slice(0, 30);
+            console.log(`✅ ${workingProxies.length} proxies chargés dans le pool.`);
+        }
+    } catch (e) {
+        console.log('⚠️ Impossible de rafraîchir les proxies, utilisation du mode direct.');
+    }
+}
+
+// Rafraîchir les proxies au démarrage puis toutes les 10 minutes
+refreshProxyPool();
+setInterval(refreshProxyPool, 10 * 60 * 1000);
+
+// 5. ÉTAT GLOBAL DU SCANNER
 let autoTask = null;
 let liveMessage = null;
 
@@ -116,20 +139,23 @@ function generateUsername(length) {
     return result;
 }
 
-// MOTEUR MULTI-PROXY ROTATIF (ZÉRO BLOCAGE CLOUDFLARE)
+// VÉRIFICATEUR AVEC ROTATION DE PROXY & SECOURS DIRECT
 async function checkUsername(username) {
     const targetUrl = `https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`;
-    
-    // Liste de relais proxy publics alternatifs pour contourner les restrictions IP de Render
-    const proxyStrategies = [
-        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
-    ];
 
-    for (const url of proxyStrategies) {
+    // Si on a des proxies, on essaie via un proxy du pool
+    let proxyUrl = workingProxies.length > 0 ? `https://${workingProxies[proxyIndex % workingProxies.length]}` : null;
+    proxyIndex++;
+
+    const endpoints = [
+        proxyUrl ? `https://corsproxy.io/?${encodeURIComponent(targetUrl)}` : null,
+        targetUrl
+    ].filter(Boolean);
+
+    for (const url of endpoints) {
         try {
             const response = await axios.get(url, {
-                timeout: 4000,
+                timeout: 3000,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                     'Accept': 'application/json, text/plain, */*'
@@ -138,19 +164,19 @@ async function checkUsername(username) {
 
             let data = response.data;
             if (typeof data === 'string') {
-                try { data = JSON.parse(data); } catch (e) {}
+                try { data = JSON.parse(data); } catch (err) {}
             }
 
             if (data && typeof data.available !== 'undefined') {
                 if (data.available === true) {
-                    return true; // Disponible
+                    return true; // Disponible (Hit)
                 } else {
                     stats.taken++;
                     return false; // Pris
                 }
             }
         } catch (e) {
-            continue; // Essaye le proxy suivant si l'un d'eux échoue
+            continue; // Passe au suivant si le proxy échoue
         }
     }
 
@@ -158,7 +184,7 @@ async function checkUsername(username) {
     return 'ERROR';
 }
 
-// 5. PANNEAU DE CONTRÔLE EMBED PRO
+// 6. PANNEAU DE CONTRÔLE EMBED PRO
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -190,7 +216,7 @@ function buildMainDashboard() {
             { name: 'FLUX EN DIRECT (TESTS EN TEMPS RÉEL)', value: liveLogText, inline: false },
             { name: 'BASE DE DONNÉES', value: `Pépites sauvées: \`${db.savedUsernames.length}\``, inline: true }
         )
-        .setFooter({ text: 'K2L Scanner Engine • Multi-Proxy Rotation Actif' })
+        .setFooter({ text: 'K2L Scanner Engine • Mode Pro Stable' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -200,7 +226,7 @@ function buildMainDashboard() {
             .addOptions([
                 { label: '🔍 Contrôle du Scan', value: 'nav_scan', description: 'Gérer le lancement et l\'arrêt' },
                 { label: '📁 Pépites Enregistrées', value: 'nav_hits', description: 'Voir les pseudos libres trouvés' },
-                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et des proxys' }
+                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et du moteur' }
             ])
     );
 
@@ -239,7 +265,7 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'nav_sys') {
                 const uptime = Math.floor(process.uptime() / 60);
                 const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Moteur : \`Multi-Proxy Rotatif (0 Erreur)\``, ephemeral: true });
+                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Proxies actifs : \`${workingProxies.length}\``, ephemeral: true });
             }
         }
 
@@ -316,7 +342,7 @@ client.on('interactionCreate', async (interaction) => {
 
                     if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-                    const delay = Math.floor(Math.random() * 800) + 1000;
+                    const delay = Math.floor(Math.random() * 1000) + 1200;
                     autoTask = setTimeout(runScanLoop, delay);
                 };
 
@@ -407,7 +433,7 @@ client.on('messageCreate', async (message) => {
 
             if (liveMessage) liveMessage.edit(buildMainDashboard()).catch(() => {});
 
-            const delay = Math.floor(Math.random() * 800) + 1000;
+            const delay = Math.floor(Math.random() * 1000) + 1200;
             autoTask = setTimeout(runScanLoopMsg, delay);
         };
 
