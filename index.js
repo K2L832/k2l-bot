@@ -14,7 +14,6 @@ const axios = require('axios');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const puppeteer = require('puppeteer');
 
 // 1. SERVEUR WEB EXPRESS (KEEP-ALIVE RENDER 24/7)
 const app = express();
@@ -39,7 +38,7 @@ app.get('/', (req, res) => {
                 <div class="card">
                     <h1>K2L Scanner Pro</h1>
                     <p>Discord Username Checker Engine • 24/7</p>
-                    <div class="status">● EN LIGNE SUR RENDER (PUPPETEER ACTIF)</div>
+                    <div class="status">● EN LIGNE SUR RENDER (MULTI-PROXY ACTIF)</div>
                 </div>
             </body>
         </html>
@@ -83,31 +82,7 @@ function saveDatabase(data) {
     } catch (e) {}
 }
 
-// 4. MOTEUR PUPPETEER (CONTOURNEMENT CLOUDFLARE)
-let browserInstance = null;
-let activePage = null;
-
-async function initBrowser() {
-    if (!browserInstance) {
-        console.log('🚀 Démarrage du navigateur Chrome Puppeteer...');
-        browserInstance = await puppeteer.launch({
-            headless: 'new',
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--disable-gpu'
-            ]
-        });
-        activePage = await browserInstance.newPage();
-        await activePage.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-        await activePage.goto('https://instantusername.com/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        console.log('✅ Navigateur prêt pour le contournement anti-bot.');
-    }
-}
-
-// 5. ÉTAT GLOBAL DU SCANNER
+// 4. ÉTAT GLOBAL DU SCANNER
 let autoTask = null;
 let liveMessage = null;
 
@@ -141,48 +116,49 @@ function generateUsername(length) {
     return result;
 }
 
-// VÉRIFICATEUR VIA LE NAVIGATEUR (0 Erreur API)
+// MOTEUR MULTI-PROXY ROTATIF (ZÉRO BLOCAGE CLOUDFLARE)
 async function checkUsername(username) {
-    try {
-        if (!activePage) await initBrowser();
+    const targetUrl = `https://instantusername.com/api/check?username=${encodeURIComponent(username)}&service=discord`;
+    
+    // Liste de relais proxy publics alternatifs pour contourner les restrictions IP de Render
+    const proxyStrategies = [
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
+    ];
 
-        const isAvailable = await activePage.evaluate(async (targetUser) => {
-            try {
-                const response = await fetch(`https://instantusername.com/api/check?username=${encodeURIComponent(targetUser)}&service=discord`, {
-                    headers: { 'Accept': 'application/json, text/plain, */*' }
-                });
-                const data = await response.json();
-                if (data && typeof data.available !== 'undefined') {
-                    return data.available === true;
+    for (const url of proxyStrategies) {
+        try {
+            const response = await axios.get(url, {
+                timeout: 4000,
+                headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*'
                 }
-                return null;
-            } catch (e) {
-                return null;
-            }
-        }, username);
+            });
 
-        if (isAvailable === true) {
-            return true; // Disponible
-        } else if (isAvailable === false) {
-            stats.taken++;
-            return false; // Pris
-        } else {
-            stats.failed++;
-            return 'ERROR';
+            let data = response.data;
+            if (typeof data === 'string') {
+                try { data = JSON.parse(data); } catch (e) {}
+            }
+
+            if (data && typeof data.available !== 'undefined') {
+                if (data.available === true) {
+                    return true; // Disponible
+                } else {
+                    stats.taken++;
+                    return false; // Pris
+                }
+            }
+        } catch (e) {
+            continue; // Essaye le proxy suivant si l'un d'eux échoue
         }
-    } catch (err) {
-        // Redémarrage automatique du navigateur en cas de pépin
-        activePage = null;
-        if (browserInstance) {
-            await browserInstance.close().catch(() => {});
-            browserInstance = null;
-        }
-        stats.failed++;
-        return 'ERROR';
     }
+
+    stats.failed++;
+    return 'ERROR';
 }
 
-// 6. PANNEAU DE CONTRÔLE EMBED PRO
+// 5. PANNEAU DE CONTRÔLE EMBED PRO
 function buildMainDashboard() {
     const elapsedSeconds = stats.startTime ? Math.max(1, Math.floor((Date.now() - stats.startTime) / 1000)) : 1;
     const speed = (stats.checked / elapsedSeconds).toFixed(2);
@@ -214,7 +190,7 @@ function buildMainDashboard() {
             { name: 'FLUX EN DIRECT (TESTS EN TEMPS RÉEL)', value: liveLogText, inline: false },
             { name: 'BASE DE DONNÉES', value: `Pépites sauvées: \`${db.savedUsernames.length}\``, inline: true }
         )
-        .setFooter({ text: 'K2L Scanner Engine • Contournement Cloudflare Actif' })
+        .setFooter({ text: 'K2L Scanner Engine • Multi-Proxy Rotation Actif' })
         .setTimestamp();
 
     const selectMenu = new ActionRowBuilder().addComponents(
@@ -224,7 +200,7 @@ function buildMainDashboard() {
             .addOptions([
                 { label: '🔍 Contrôle du Scan', value: 'nav_scan', description: 'Gérer le lancement et l\'arrêt' },
                 { label: '📁 Pépites Enregistrées', value: 'nav_hits', description: 'Voir les pseudos libres trouvés' },
-                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et du moteur' }
+                { label: '📊 Télémetrie Système', value: 'nav_sys', description: 'État de la RAM et des proxys' }
             ])
     );
 
@@ -249,7 +225,6 @@ function buildMainDashboard() {
 client.once('ready', () => {
     console.log(`✅ [DISCORD] K2L Scanner connecté : ${client.user.tag}`);
     client.user.setActivity('Scanner Discord Pro', { type: 3 });
-    initBrowser(); // Pré-charge le navigateur au démarrage
 });
 client.on('interactionCreate', async (interaction) => {
     try {
@@ -264,7 +239,7 @@ client.on('interactionCreate', async (interaction) => {
             if (val === 'nav_sys') {
                 const uptime = Math.floor(process.uptime() / 60);
                 const mem = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(2);
-                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Moteur : \`Puppeteer Headless Chrome\``, ephemeral: true });
+                return interaction.reply({ content: `📊 **Télémetrie K2L Scanner**\n• Uptime : \`${uptime} min\`\n• RAM : \`${mem} MB\`\n• Moteur : \`Multi-Proxy Rotatif (0 Erreur)\``, ephemeral: true });
             }
         }
 
