@@ -1,7 +1,7 @@
 {
   "name": "k2l-discord-bot",
   "version": "1.0.0",
-  "description": "Bot Discord utilitaire complet",
+  "description": "Bot Discord utilitaire complet avec serveur web pour Render",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
