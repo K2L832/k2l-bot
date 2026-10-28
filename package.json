@@ -1,10 +1,13 @@
 {
   "name": "k2l-discord-bot",
   "version": "1.0.0",
-  "description": "Bot Discord utilitaire complet avec menu d'aide interactif",
+  "description": "Bot Discord utilitaire complet",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
   },
   "dependencies": {
     "discord.js": "^14.14.0"
