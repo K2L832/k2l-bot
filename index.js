@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
 
 const client = new Client({
     intents: [
@@ -11,7 +11,20 @@ const client = new Client({
 
 const PREFIX = '=';
 
-// 📋 INTÉGRALITÉ DE TOUTES LES COMMANDES DE TES SCREENSHOTS
+// Stockage temporaire pour le système de snipe (messages supprimés)
+const snipeCache = new Map();
+
+client.on('messageDelete', message => {
+    if (!message.author || message.author.bot) return;
+    snipeCache.set(message.channel.id, {
+        content: message.content || "[Média / Embed]",
+        author: message.author.tag,
+        avatar: message.author.displayAvatarURL(),
+        time: new Date().toLocaleTimeString()
+    });
+});
+
+// Configuration du menu d'aide avec toutes les commandes et descriptions exactes
 const helpCategories = {
     sanctions: {
         label: 'Sanctions',
@@ -102,7 +115,7 @@ const helpCategories = {
 };
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} !`);
+    console.log(`Bot connecté en tant que ${client.user.tag} avec succès !`);
 });
 
 client.on('messageCreate', async message => {
@@ -111,7 +124,7 @@ client.on('messageCreate', async message => {
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
 
-    // Système de commande =help avec menu déroulant interactif
+    // 1. COMMANDE =HELP INTERACTIVE
     if (command === 'help') {
         const defaultCategoryKey = 'sanctions';
         const cat = helpCategories[defaultCategoryKey];
@@ -163,6 +176,130 @@ client.on('messageCreate', async message => {
             sentMessage.edit({ components: [] }).catch(() => {});
         });
     }
+
+    // 2. LOGIQUE DES COMMANDES DE NETTOYAGE
+    else if (command === 'clear') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageMessages)) {
+            return message.reply("Tu n'as pas la permission de gérer les messages.");
+        }
+        const amount = args[0];
+        if (!amount) return message.reply("Précise un nombre de messages à supprimer ou `all`.");
+        
+        if (amount.toLowerCase() === 'all') {
+            try {
+                let deleted;
+                do {
+                    deleted = await message.channel.bulkDelete(100, true);
+                } while (deleted.size >= 2);
+                return message.channel.send("Salon entièrement nettoyé !").then(msg => setTimeout(() => msg.delete(), 3000));
+            } catch (err) {
+                return message.reply("Erreur lors de la suppression massive des messages.");
+            }
+        }
+
+        const count = parseInt(amount);
+        if (isNaN(count) || count <= 0 || count > 100) {
+            return message.reply("Donne un nombre entre 1 et 100.");
+        }
+
+        try {
+            await message.delete();
+            const fetched = await message.channel.messages.fetch({ limit: count });
+            await message.channel.bulkDelete(fetched, true);
+            const confirmation = await message.channel.send(`🧹 ${fetched.size} messages supprimés.`);
+            setTimeout(() => confirmation.delete().catch(() => {}), 3000);
+        } catch (err) {
+            message.reply("Impossible de supprimer des messages de plus de 14 jours.");
+        }
+    }
+
+    else if (command === 'snipe') {
+        const sniped = snipeCache.get(message.channel.id);
+        if (!sniped) return message.reply("Aucun message récent n'a été supprimé dans ce salon.");
+
+        const embed = new EmbedBuilder()
+            .setColor('#ff5555')
+            .setAuthor({ name: sniped.author, iconURL: sniped.avatar })
+            .setDescription(`**Message supprimé :**\n${sniped.content}`)
+            .setFooter({ text: `Supprimé à ${sniped.time}` });
+
+        message.reply({ embeds: [embed] });
+    }
+
+    // 3. LOGIQUE DES COMMANDES DE SANCTIONS
+    else if (command === 'kick') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.KickMembers)) {
+            return message.reply("Tu n'as pas la permission d'expulser des membres.");
+        }
+        const member = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
+        if (!member) return message.reply("Mentionne un membre valide à expulser.");
+        
+        const reason = args.slice(1).join(' ') || "Aucune raison spécifiée";
+        try {
+            await member.kick(reason);
+            message.reply(`✅ **${member.user.tag}** a été expulsé. Raison : ${reason}`);
+        } catch (err) {
+            message.reply("Je n'ai pas les permissions suffisantes pour expulser ce membre.");
+        }
+    }
+
+    else if (command === 'bl') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+            return message.reply("Tu n'as pas la permission de bannir.");
+        }
+        const targetId = args[0]?.replace(/<@!?|>/g, '');
+        if (!targetId) return message.reply("Fournis un ID ou une mention valide.");
+        
+        const reason = args.slice(1).join(' ') || "Aucune raison";
+        try {
+            await message.guild.members.ban(targetId, { reason });
+            message.reply(`🔨 Utilisateur \`${targetId}`} banni avec succès.`);
+        } catch (err) {
+            message.reply("Impossible de bannir cet utilisateur (vérifie mon rôle ou l'ID).");
+        }
+    }
+
+    else if (command === 'unbl') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.BanMembers)) {
+            return message.reply("Permissions insuffisantes.");
+        }
+        const userId = args[0];
+        if (!userId) return message.reply("Donne l'ID de l'utilisateur à débannir.");
+
+        try {
+            await message.guild.members.unban(userId);
+            message.reply(`🔓 Utilisateur \`${userId}\` débanni.`);
+        } catch (err) {
+            message.reply("Utilisateur introuvable dans la liste des bannis.");
+        }
+    }
+
+    // 4. LOGIQUE DES SALONS (LOCK / UNLOCK)
+    else if (command === 'lock') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+            return message.reply("Tu n'as pas la permission de gérer les salons.");
+        }
+        const channel = message.mentions.channels.first() || message.channel;
+        try {
+            await channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
+            message.reply(`🔒 Le salon ${channel} a été verrouillé.`);
+        } catch (err) {
+            message.reply("Erreur lors du verrouillage du salon.");
+        }
+    }
+
+    else if (command === 'unlock') {
+        if (!message.member.permissions.has(PermissionsBitField.Flags.ManageChannels)) {
+            return message.reply("Permissions insuffisantes.");
+        }
+        const channel = message.mentions.channels.first() || message.channel;
+        try {
+            await channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
+            message.reply(`🔓 Le salon ${channel} a été déverrouillé.`);
+        } catch (err) {
+            message.reply("Erreur lors du déverrouillage du salon.");
+        }
+    }
 });
 
-client.login(process.env.TOKEN); // Utilise les variables d'environnement de Render
+client.login(process.env.TOKEN);
