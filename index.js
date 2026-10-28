@@ -1,5 +1,18 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField } = require('discord.js');
+const http = require('http');
 
+// 1. Création d'un mini serveur HTTP pour satisfaire le port exigé par Render
+const PORT = process.env.PORT || 3000;
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('K2L Bot is running smoothly!\n');
+});
+
+server.listen(PORT, () => {
+    console.log(`Serveur HTTP en écoute sur le port ${PORT}`);
+});
+
+// 2. Initialisation du Bot Discord
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -253,7 +266,7 @@ client.on('messageCreate', async message => {
         const reason = args.slice(1).join(' ') || "Aucune raison";
         try {
             await message.guild.members.ban(targetId, { reason });
-            message.reply(`🔨 Utilisateur \`${targetId}`} banni avec succès.`);
+            message.reply(`🔨 Utilisateur \`${targetId}\` banni avec succès.`);
         } catch (err) {
             message.reply("Impossible de bannir cet utilisateur (vérifie mon rôle ou l'ID).");
         }
@@ -302,4 +315,5 @@ client.on('messageCreate', async message => {
     }
 });
 
-client.login(process.env.TOKEN);
+// Connexion du bot en utilisant bien DISCORD_TOKEN
+client.login(process.env.DISCORD_TOKEN);
