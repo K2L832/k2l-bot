@@ -1,10 +1,12 @@
 {
-  "name": "k2l-scanner",
+  "name": "k2l-discord-bot",
   "version": "1.0.0",
+  "description": "Bot Discord utilitaire complet avec menu d'aide interactif",
   "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
   "dependencies": {
-    "axios": "^1.6.8",
-    "discord.js": "^14.14.1",
-    "express": "^4.19.2"
+    "discord.js": "^14.14.0"
   }
 }
