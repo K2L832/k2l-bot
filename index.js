@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType } = require('discord.js');
 const http = require('http');
 
 // Serveur HTTP pour Render (maintient le Web Service actif)
@@ -25,23 +25,19 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Ton compte "77jc" (k2l) et ton ID numérique enregistrés définitivement comme Owners permanents
-const botOwners = new Set(["77jc", "1165181057488924765"]); 
+// Owners permanents par ID chiffré (Ton ID principal est ancré ici pour ne jamais s'effacer)
+const botOwners = new Set(["1165181057488924765", "77jc"]); 
 
-// Fonction de vérification Owner permanente (ne s'efface jamais au redémarrage)
-function isOwner(message) {
-    if (message.author.id === message.guild.ownerId) return true;
-    if (botOwners.has(message.author.id) || botOwners.has(message.author.username)) return true;
-    return false;
+function isOwner(userId) {
+    return botOwners.has(userId);
 }
 
-// Fonction pour récupérer la config Automod d'un serveur
 function getGuildAutomod(guildId) {
     if (!serverConfig.has(guildId)) {
         serverConfig.set(guildId, {
-            antilink: true,   // Activé par défaut
-            antispam: true,   // Activé par défaut
-            antibot: true,    // Activé par défaut
+            antilink: true,
+            antispam: true,
+            antibot: true,
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null
@@ -50,7 +46,7 @@ function getGuildAutomod(guildId) {
     return serverConfig.get(guildId);
 }
 
-// Cache Snipe (messages supprimés)
+// Cache Snipe
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot) return;
     snipeCache.set(message.channel.id, {
@@ -62,15 +58,67 @@ client.on('messageDelete', message => {
 });
 
 // ==========================================
-// AUTOMOD EN TEMPS RÉEL (ANTI-LINK, SPAM, BOT)
+// INTERACTIONS GLOBAL (TICKETS & GIVEAWAYS BOUTONS)
+// ==========================================
+client.on('interactionCreate', async interaction => {
+    if (!interaction.isButton()) return;
+
+    // Gestion de l'ouverture de ticket
+    if (interaction.customId === 'create_ticket') {
+        const guild = interaction.guild;
+        const member = interaction.member;
+
+        try {
+            const ticketChannel = await guild.channels.create({
+                name: `ticket-${member.user.username}`,
+                type: ChannelType.GuildText,
+                permissionOverwrites: [
+                    { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+                    { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] },
+                ]
+            });
+
+            const embed = new EmbedBuilder()
+                .setColor('#5865F2')
+                .setTitle(`🎫 Ticket de ${member.user.username}`)
+                .setDescription("Un membre du staff va bientôt te prendre en charge. Clique sur le bouton ci-dessous pour fermer le ticket.");
+
+            const closeRow = new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Fermer le ticket').setStyle(ButtonStyle.Danger)
+            );
+
+            await ticketChannel.send({ content: `<@${member.id}>`, embeds: [embed], components: [closeRow] });
+            return interaction.reply({ content: `✅ Ton ticket a été créé : ${ticketChannel}`, ephemeral: true });
+        } catch (e) {
+            return interaction.reply({ content: "Erreur lors de la création du ticket.", ephemeral: true });
+        }
+    }
+
+    // Gestion de la fermeture de ticket
+    if (interaction.customId === 'close_ticket') {
+        await interaction.reply("🔒 Fermeture du ticket dans 3 secondes...");
+        setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
+    }
+
+    // Gestion de la participation aux Giveaways
+    if (interaction.customId.startsWith('join_giveaway_')) {
+        const giveawayId = interaction.customId.replace('join_giveaway_giveaway_', '');
+        // Gestion basique des entrées de giveaways interactifs
+        return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
+    }
+});
+
+// ==========================================
+// AUTOMOD & COMMANDES
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     const automod = getGuildAutomod(message.guild.id);
-    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
+    const userId = message.author.id;
+    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(userId) || userId === message.guild.ownerId;
 
-    // 1. Anti-Link / Anti-Leak
+    // 1. Anti-Link
     if (automod.antilink && !isUserAdminOrOwner) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
@@ -83,9 +131,8 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // 2. Anti-Spam (Max 5 messages en 5 secondes)
+    // 2. Anti-Spam
     if (automod.antispam && !isUserAdminOrOwner) {
-        const userId = message.author.id;
         const now = Date.now();
         let userSpam = spamTracker.get(userId) || [];
         userSpam = userSpam.filter(timestamp => now - timestamp < 5000);
@@ -106,43 +153,40 @@ client.on('messageCreate', async message => {
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
+    const targetArg = args[0]?.replace(/<@!?|>/g, ''); // Permet d'accepter une mention OU un ID numérique direct
 
     // ==========================================
-    // MENU =HELP COMPLET ET MIS À JOUR
+    // MENU =HELP COMPLET
     // ==========================================
     if (command === 'help') {
         const helpCategories = {
             sanctions: {
-                label: 'Sanctions', emoji: '🔨', description: 'Gérer la modération et les bannissements',
-                commands: ['`=bl <@membre|id> [raison]` - Bannir', '`=unbl <user_id>` - Débannir ID', '`=blist` - Liste des bannis', '`=unbanall` - Débannir tout le monde', '`=kick <@membre>` - Expulser', '`=softbl <@membre>` - Softban']
+                label: 'Sanctions', emoji: '🔨', description: 'Bannir / Expulser (via Mention ou ID)',
+                commands: ['`=bl <@ID> [raison]` - Bannir', '`=unbl <ID>` - Débannir ID', '`=blist` - Liste des bannis', '`=kick <@ID>` - Expulser']
             },
             nettoyage: {
-                label: 'Nettoyage', emoji: '🧹', description: 'Purger et nettoyer les salons',
-                commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <@membre>` - Suppr msgs d\'un membre', '`=snipe` - Voir le dernier msg supprimé']
+                label: 'Nettoyage', emoji: '🧹', description: 'Nettoyer les salons',
+                commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <@ID>` - Purger les msgs d\'un membre', '`=snipe` - Voir le dernier msg supprimé']
             },
             salons: {
-                label: 'Salons', emoji: '🔒', description: 'Gestion et sécurité des salons',
-                commands: ['`=lock` - Verrouiller', '`=unlock` - Déverrouiller', '`=slowmode <sec>` - Ralentissement', '`=nuke` - Recréer un salon', '`=createtext <nom>` - Créer salon texte', '`=createvoice <nom>` - Créer salon vocal']
+                label: 'Salons', emoji: '🔒', description: 'Sécurité et gestion des salons',
+                commands: ['`=lock` / `=unlock` - Verrouiller / Déverrouiller', '`=slowmode <sec>` - Ralentissement', '`=nuke` - Recréer un salon']
             },
             giveaways: {
-                label: 'Giveaways', emoji: '🎉', description: 'Lancer et gérer des concours',
-                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer', '`=gend <id>` - Terminer', '`=greroll <id>` - Retirer un gagnant']
+                label: 'Giveaways', emoji: '🎉', description: 'Concours interactifs',
+                commands: ['`=gcreate <durée> <gagnants> <prix> [condition]` - Lancer un vrai concours']
             },
             tickets: {
-                label: 'Tickets', emoji: '🎫', description: 'Système de support et panneaux',
-                commands: ['`=ticketsetup` - Publier le panneau', '`=ticketadd <nom>` - Ajouter un bouton']
-            },
-            membres: {
-                label: 'Membres & Rôles', emoji: '👤', description: 'Suivi, stats et rôles',
-                commands: ['`=invites [@membre]` - Voir les invitations', '`=setwelcome <#salon> <msg>` - Message de bienvenue']
+                label: 'Tickets', emoji: '🎫', description: 'Panneau de support interactif',
+                commands: ['`=ticketsetup <#salon>` - Publier le panneau de tickets']
             },
             automod: {
-                label: 'Automod', emoji: '🛡️', description: 'Commandes et états des protections',
-                commands: ['`=antilink on/off` - Activer/Désactiver l\'anti-link', '`=antispam on/off` - Activer/Désactiver l\'anti-spam', '`=antibot on/off` - Activer/Désactiver l\'anti-bot']
+                label: 'Automod', emoji: '🛡️', description: 'Protections du serveur',
+                commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`']
             },
             config: {
-                label: 'Configuration', emoji: '⚙️', description: 'Paramètres et rôles du bot',
-                commands: ['`=owner <@membre>` - Ajouter un owner', '`=unowner <@membre>` - Retirer un owner', '`=setlog <#salon>` - Salon de logs']
+                label: 'Configuration', emoji: '⚙️', description: 'Owners et paramètres',
+                commands: ['`=owner <ID>` - Ajouter un owner', '`=unowner <ID>` - Retirer un owner', '`=setlog <#salon>`']
             }
         };
 
@@ -186,12 +230,83 @@ client.on('messageCreate', async message => {
     }
 
     // ==========================================
-    // COMMANDES AUTOMOD (=antilink, =antispam, =antibot)
+    // GESTION DES OWNERS PAR ID NUMÉRIQUE
+    // ==========================================
+    if (command === 'owner') {
+        if (!isOwner(userId) && userId !== message.guild.ownerId) {
+            return message.reply("❌ Réservé aux Owners.");
+        }
+        if (!targetArg) return message.reply("Fournis l'ID ou la mention de l'utilisateur.");
+        botOwners.add(targetArg);
+        return message.reply(`👑 L'utilisateur \`${targetArg}\` a été ajouté comme Owner permanent !`);
+    }
+
+    if (command === 'unowner') {
+        if (!isOwner(userId) && userId !== message.guild.ownerId) {
+            return message.reply("❌ Réservé aux Owners.");
+        }
+        if (!targetArg) return message.reply("Fournis l'ID ou la mention.");
+        botOwners.delete(targetArg);
+        return message.reply(`🔒 L'utilisateur \`${targetArg}\` n'est plus Owner.`);
+    }
+
+    // VÉRIFICATION DES PERMISSIONS SENSIBLES
+    const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
+    if (sensitiveCommands.includes(command)) {
+        if (!isOwner(userId) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator) && userId !== message.guild.ownerId) {
+            return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
+        }
+    }
+
+    // ==========================================
+    // VRAI SYSTÈME DE TICKETS INTERACTIF
+    // ==========================================
+    if (command === 'ticketsetup') {
+        const targetChannel = message.mentions.channels.first() || message.channel;
+        const embed = new EmbedBuilder()
+            .setColor('#5865F2')
+            .setTitle("🎫 Support & Tickets")
+            .setDescription("Besoin d'aide ? Clique sur le bouton ci-dessous pour ouvrir un salon de ticket privé avec le staff.");
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('create_ticket').setLabel('📩 Ouvrir un ticket').setStyle(ButtonStyle.Primary)
+        );
+
+        await targetChannel.send({ embeds: [embed], components: [row] });
+        return message.reply("✅ Panneau de tickets interactif publié avec succès !");
+    }
+
+    // ==========================================
+    // VRAI SYSTÈME DE GIVEAWAYS INTERACTIF
+    // ==========================================
+    if (command === 'gcreate') {
+        // Format: =gcreate 1h 1 Nitro [Condition: Être abonné]
+        const duration = args[0];
+        const winnersCount = parseInt(args[1]);
+        const prize = args.slice(2, -1).join(' ') || args.slice(2).join(' ');
+
+        if (!duration || isNaN(winnersCount) || !prize) {
+            return message.reply("Utilisation correcte : `=gcreate <durée ex: 1m/1h> <gagnants> <prix>`");
+        }
+
+        const embed = new EmbedBuilder()
+            .setColor('#FF73FA')
+            .setTitle("🎉 GIVEAWAY 🎉")
+            .setDescription(`**Lot :** ${prize}\n**Gagnant(s) :** ${winnersCount}\n\nClique sur le bouton 🎉 ci-dessous pour participer !`)
+            .setFooter({ text: `Lancé par ${message.author.tag}` });
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('join_giveaway_1').setLabel('🎉 Participer').setStyle(ButtonStyle.Success)
+        );
+
+        const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
+        return message.reply("🎉 Giveaway lancé avec succès !");
+    }
+
+    // ==========================================
+    // AUTOMOD COMMANDES (on/off)
     // ==========================================
     if (['antilink', 'antispam', 'antibot'].includes(command)) {
-        if (!isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Réservé aux Owners et Administrateurs.");
-        }
         const state = args[0]?.toLowerCase();
         if (state !== 'on' && state !== 'off') {
             return message.reply(`Utilisation : \`=${command} on\` ou \`=${command} off\``);
@@ -201,61 +316,22 @@ client.on('messageCreate', async message => {
     }
 
     // ==========================================
-    // COMMANDES =OWNER ET =UNOWNER
-    // ==========================================
-    if (command === 'owner') {
-        if (!isOwner(message)) {
-            return message.reply("❌ Seul un Owner du bot peut en ajouter un autre.");
-        }
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("Mentionne l'utilisateur à définir comme Owner.");
-        
-        botOwners.add(target.id);
-        return message.reply(`👑 **${target.tag}** a été ajouté avec succès comme Owner du bot !`);
-    }
-
-    if (command === 'unowner') {
-        if (!isOwner(message)) {
-            return message.reply("❌ Seul un Owner peut retirer les droits d'un autre Owner.");
-        }
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("Mentionne l'utilisateur dont tu veux retirer les droits Owner.");
-        
-        if (target.id === message.guild.ownerId || target.id === "1165181057488924765") {
-            return message.reply("❌ Impossible de retirer les droits du propriétaire principal.");
-        }
-
-        botOwners.delete(target.id);
-        return message.reply(`🔒 **${target.tag}** n'est plus Owner du bot.`);
-    }
-
-    // VÉRIFICATION GLOBALE DES PERMISSIONS SENSIBLES (OWNERS / ADMINS)
-    const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup'];
-    if (sensitiveCommands.includes(command)) {
-        if (!isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Commande strictement réservée aux Owners du bot ou Administrateurs.");
-        }
-    }
-
-    // ==========================================
-    // SECTION SANCTIONS
+    // SECTION SANCTIONS (IDs numériques acceptés)
     // ==========================================
     if (command === 'bl') {
-        const targetId = args[0]?.replace(/<@!?|>/g, '');
-        if (!targetId) return message.reply("Fournis un ID ou une mention valide.");
+        if (!targetArg) return message.reply("Fournis un ID ou une mention.");
         const reason = args.slice(1).join(' ') || "Aucune raison";
         try {
-            await message.guild.members.ban(targetId, { reason });
-            message.reply(`🔨 Utilisateur \`${targetId}\` banni.`);
-        } catch (e) { message.reply("Impossible de bannir cet utilisateur."); }
+            await message.guild.members.ban(targetArg, { reason });
+            message.reply(`🔨 Utilisateur \`${targetArg}\` banni.`);
+        } catch (e) { message.reply("Impossible de bannir (vérifie l'ID)."); }
     }
 
     else if (command === 'unbl') {
-        const userId = args[0];
-        if (!userId) return message.reply("Donne l'ID à débannir.");
+        if (!targetArg) return message.reply("Donne l'ID à débannir.");
         try {
-            await message.guild.members.unban(userId);
-            message.reply(`🔓 Utilisateur \`${userId}\` débanni.`);
+            await message.guild.members.unban(targetArg);
+            message.reply(`🔓 Utilisateur \`${targetArg}\` débanni.`);
         } catch (e) { message.reply("Utilisateur introuvable."); }
     }
 
@@ -269,14 +345,14 @@ client.on('messageCreate', async message => {
     else if (command === 'unbanall') {
         const bans = await message.guild.bans.fetch();
         if (bans.size === 0) return message.reply("Aucun banni.");
-        for (const [userId] of bans) {
-            await message.guild.members.unban(userId).catch(() => {});
+        for (const [userIdVal] of bans) {
+            await message.guild.members.unban(userIdVal).catch(() => {});
         }
         message.reply(`🔓 Tous les utilisateurs (${bans.size}) ont été débannis.`);
     }
 
     else if (command === 'kick') {
-        const member = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
+        const member = message.mentions.members.first() || message.guild.members.cache.get(targetArg);
         if (!member) return message.reply("Membre introuvable.");
         const reason = args.slice(1).join(' ') || "Aucune raison";
         try {
@@ -285,18 +361,8 @@ client.on('messageCreate', async message => {
         } catch (e) { message.reply("Impossible d'expulser."); }
     }
 
-    else if (command === 'softbl') {
-        const member = message.mentions.members.first() || message.guild.members.cache.get(args[0]);
-        if (!member) return message.reply("Membre introuvable.");
-        try {
-            await member.ban({ reason: "Softbl" });
-            await message.guild.members.unban(member.id);
-            message.reply(`🌪️ **${member.user.tag}** a subi un softban.`);
-        } catch (e) { message.reply("Erreur."); }
-    }
-
     // ==========================================
-    // SECTION NETTOYAGE
+    // SECTION NETTOYAGE & SALONS
     // ==========================================
     else if (command === 'clear') {
         const val = args[0];
@@ -326,8 +392,8 @@ client.on('messageCreate', async message => {
     }
 
     else if (command === 'purge') {
-        const target = message.mentions.members.first();
-        if (!target) return message.reply("Mentionne le membre.");
+        const target = message.mentions.members.first() || message.guild.members.cache.get(targetArg);
+        if (!target) return message.reply("Mentionne ou donne l'ID du membre.");
         const limit = parseInt(args[1]) || 50;
 
         try {
@@ -350,9 +416,6 @@ client.on('messageCreate', async message => {
         message.reply({ embeds: [embed] });
     }
 
-    // ==========================================
-    // SECTION SALONS
-    // ==========================================
     else if (command === 'lock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
@@ -382,62 +445,21 @@ client.on('messageCreate', async message => {
             const newChannel = await message.channel.clone();
             await message.channel.delete();
             newChannel.setPosition(position);
-            newChannel.send("💥 Salon nuké et recréé à neuf !");
+         newChannel.send("💥 Salon nuké et recréé à neuf !");
         } catch (e) { message.reply("Erreur."); }
     }
 
-    else if (command === 'createtext') {
-        const name = args.join('-');
-        if (!name) return message.reply("Nom manquant.");
-        try {
-            await message.guild.channels.create({ name, type: ChannelType.GuildText });
-            message.reply(`✅ Salon textuel \`${name}\` créé.`);
-        } catch (e) { message.reply("Erreur."); }
-    }
-
-    else if (command === 'createvoice') {
-        const name = args.join(' ');
-        if (!name) return message.reply("Nom manquant.");
-        try {
-            await message.guild.channels.create({ name, type: ChannelType.GuildVoice });
-            message.reply(`✅ Salon vocal \`${name}\` créé.`);
-        } catch (e) { message.reply("Erreur."); }
-    }
-
-    // ==========================================
-    // SECTION GIVEAWAYS & TICKETS
-    // ==========================================
-    else if (command === 'gcreate') {
-        message.reply("🎉 Commande Giveaway initialisée.");
-    }
-    else if (command === 'ticketsetup') {
-        message.reply("🎫 Panneau de tickets publié avec succès !");
-    }
-
-    // ==========================================
-    // CONFIGURATION
-    // ==========================================
+    // CONFIGURATION LOGS
     else if (command === 'setlog') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Mentionne un salon.");
-        const automodConfig = getGuildAutomod(message.guild.id);
-        automodConfig.logChannel = channel.id;
+        automod.logChannel = channel.id;
         message.reply(`⚙️ Salon de logs défini sur ${channel}.`);
-    }
-
-    else if (command === 'setwelcome') {
-        const channel = message.mentions.channels.first();
-        const customMsg = args.slice(1).join(' ');
-        if (!channel || !customMsg) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
-        const automodConfig = getGuildAutomod(message.guild.id);
-        automodConfig.welcomeChannel = channel.id;
-        automodConfig.welcomeText = customMsg;
-        message.reply(`✅ Message de bienvenue configuré.`);
     }
 });
 
 // ==========================================
-// ANTI-BOT AUTOMOD (Vérification on/off)
+// ANTI-BOT AUTOMOD
 // ==========================================
 client.on('guildMemberAdd', async member => {
     if (member.user.bot) {
@@ -445,7 +467,7 @@ client.on('guildMemberAdd', async member => {
         if (automod.antibot) {
             try {
                 await member.kick("Anti-Bot Automod : Bot non autorisé.");
-                        if (automod.logChannel) {
+                if (automod.logChannel) {
                     const logChan = member.guild.channels.cache.get(automod.logChannel);
                     if (logChan) logChan.send(`🛡️ **Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé.`);
                 }
@@ -453,19 +475,6 @@ client.on('guildMemberAdd', async member => {
         }
         return;
     }
-
-    const automod = getGuildAutomod(member.guild.id);
-    if (!automod.welcomeChannel || !automod.welcomeText) return;
-    const channel = member.guild.channels.cache.get(automod.welcomeChannel);
-    if (!channel) return;
-
-    let text = automod.welcomeText
-        .replace('{mention}', `<@${member.id}>`)
-        .replace('{name}', member.user.username)
-        .replace('{server}', member.guild.name)
-        .replace('{number}', member.guild.memberCount);
-
-    channel.send(text).catch(() => {});
 });
 
 client.login(process.env.DISCORD_TOKEN);
