@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, PermissionsBitField, ChannelType } = require('discord.js');
 const http = require('http');
 
-// Serveur HTTP pour Render (garde le web service actif)
+// Serveur HTTP pour Render (maintient le Web Service actif)
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -25,17 +25,17 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Ton compte principal "77jc" (k2l) est enregistré directement ici en tant qu'Owner de base du bot !
-const botOwners = new Set(["77jc", "1165181057488924765"]); // Ajoute ton ID numérique exact si besoin, ou ton tag
+// Ton compte "77jc" (k2l) enregistré en dur comme Owner principal du bot
+const botOwners = new Set(["77jc", "1165181057488924765"]); 
 
-// Fonction de vérification Owner (propriétaire du serveur ou owner du bot enregistré)
+// Fonction de vérification Owner
 function isOwner(message) {
     if (message.author.id === message.guild.ownerId) return true;
     if (botOwners.has(message.author.id) || botOwners.has(message.author.username)) return true;
     return false;
 }
 
-// Cache Snipe
+// Cache Snipe (messages supprimés)
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot) return;
     snipeCache.set(message.channel.id, {
@@ -90,7 +90,7 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
 
     // ==========================================
-    // MENU =HELP AVEC TOUTES LES CATÉGORIES
+    // MENU =HELP COMPLET (Toutes les catégories)
     // ==========================================
     if (command === 'help') {
         const helpCategories = {
@@ -124,7 +124,7 @@ client.on('messageCreate', async message => {
             },
             config: {
                 label: 'Configuration', emoji: '⚙️', description: 'Paramètres et rôles du bot',
-                commands: ['`=owner <@membre>` - Ajouter un owner du bot', '`=setlog <#salon>` - Salon de logs']
+                commands: ['`=owner <@membre>` - Ajouter un owner', '`=unowner <@membre>` - Retirer un owner', '`=setlog <#salon>` - Salon de logs']
             }
         };
 
@@ -168,7 +168,7 @@ client.on('messageCreate', async message => {
     }
 
     // ==========================================
-    // COMMANDE =OWNER
+    // COMMANDES =OWNER ET =UNOWNER
     // ==========================================
     if (command === 'owner') {
         if (!isOwner(message)) {
@@ -182,7 +182,23 @@ client.on('messageCreate', async message => {
         return;
     }
 
-    // VÉRIFICATION DES PERMISSIONS OWNER POUR LES COMMANDES SENSIBLES
+    if (command === 'unowner') {
+        if (!isOwner(message)) {
+            return message.reply("❌ Seul un Owner peut retirer les droits d'un autre Owner.");
+        }
+        const target = message.mentions.users.first();
+        if (!target) return message.reply("Mentionne l'utilisateur dont tu veux retirer les droits Owner.");
+        
+        if (target.id === message.guild.ownerId) {
+            return message.reply("❌ Impossible de retirer le propriétaire principal du serveur.");
+        }
+
+        botOwners.delete(target.id);
+        message.reply(`🔒 **${target.tag}** n'est plus Owner du bot.`);
+        return;
+    }
+
+    // VÉRIFICATION DES PERMISSIONS POUR LES COMMANDES SENSIBLES
     const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'gend', 'greroll', 'ticketsetup', 'ticketadd'];
     if (sensitiveCommands.includes(command)) {
         if (!isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -358,10 +374,10 @@ client.on('messageCreate', async message => {
     }
 
     // ==========================================
-    // SECTION GIVEAWAYS & TICKETS (Commandes de base)
+    // SECTION GIVEAWAYS & TICKETS
     // ==========================================
     else if (command === 'gcreate') {
-        message.reply("🎉 Commande Giveaway initialisée : Utilise le panneau pour configurer le lot.");
+        message.reply("🎉 Commande Giveaway initialisée.");
     }
     else if (command === 'ticketsetup') {
         message.reply("🎫 Panneau de tickets publié avec succès !");
