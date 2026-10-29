@@ -25,11 +25,17 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Owners permanents par ID chiffré (Ton ID principal "77jc" / k2l)
-const botOwners = new Set(["1165181057488924765", "77jc"]); 
+// Ton identifiant exact "77jc" enregistré définitivement comme Owner permanent ineffaçable
+const botOwners = new Set(["77jc", "1166445202148442112"]); 
 
-function isOwner(userId) {
-    return botOwners.has(userId);
+function isOwner(message) {
+    const userId = message.author.id;
+    const username = message.author.username.toLowerCase();
+    const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
+    
+    if (message.guild && message.guild.ownerId === userId) return true;
+    if (botOwners.has(userId) || botOwners.has(username) || botOwners.has(globalName)) return true;
+    return false;
 }
 
 function getGuildAutomod(guildId) {
@@ -111,7 +117,8 @@ client.on('messageCreate', async message => {
 
     const automod = getGuildAutomod(message.guild.id);
     const userId = message.author.id;
-    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(userId) || userId === message.guild.ownerId;
+    const userIsOwner = isOwner(message);
+    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || userIsOwner;
 
     // 1. Anti-Link
     if (automod.antilink && !isUserAdminOrOwner) {
@@ -148,7 +155,7 @@ client.on('messageCreate', async message => {
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
-    const targetArg = args[0]?.replace(/<@!?|>/g, ''); // Supporte les mentions et IDs chiffrés
+    const targetArg = args[0]?.replace(/<@!?|>/g, '');
 
     // ==========================================
     // MENU =HELP COMPLET
@@ -228,7 +235,7 @@ client.on('messageCreate', async message => {
     // GESTION DES OWNERS PAR ID NUMÉRIQUE
     // ==========================================
     if (command === 'owner') {
-        if (!isOwner(userId) && userId !== message.guild.ownerId) {
+        if (!userIsOwner) {
             return message.reply("❌ Réservé aux Owners.");
         }
         if (!targetArg) return message.reply("Fournis l'ID ou la mention de l'utilisateur.");
@@ -237,7 +244,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'unowner') {
-        if (!isOwner(userId) && userId !== message.guild.ownerId) {
+        if (!userIsOwner) {
             return message.reply("❌ Réservé aux Owners.");
         }
         if (!targetArg) return message.reply("Fournis l'ID ou la mention.");
@@ -248,7 +255,7 @@ client.on('messageCreate', async message => {
     // VÉRIFICATION DES PERMISSIONS SENSIBLES
     const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
     if (sensitiveCommands.includes(command)) {
-        if (!isOwner(userId) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator) && userId !== message.guild.ownerId) {
+        if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
         }
     }
@@ -443,11 +450,10 @@ client.on('messageCreate', async message => {
         automod.logChannel = channel.id;
         message.reply(`⚙️ Salon de logs défini sur ${channel}.`);
     }
-
     else if (command === 'setwelcome') {
         const channel = message.mentions.channels.first();
         const customMsg = args.slice(1).join(' ');
-        if (!channel || !customMsg) return message.reply("Utilisation `<#salon> <message>`");
+        if (!channel || !customMsg) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
         automod.welcomeChannel = channel.id;
         automod.welcomeText = customMsg;
         message.reply(`✅ Message de bienvenue configuré dans ${channel}.`);
