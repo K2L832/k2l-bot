@@ -25,7 +25,7 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Owners permanents par ID chiffré (Ton ID principal est ancré ici pour ne jamais s'effacer)
+// Owners permanents par ID chiffré (Ton ID principal "77jc" / k2l)
 const botOwners = new Set(["1165181057488924765", "77jc"]); 
 
 function isOwner(userId) {
@@ -46,7 +46,7 @@ function getGuildAutomod(guildId) {
     return serverConfig.get(guildId);
 }
 
-// Cache Snipe
+// Cache Snipe (Messages supprimés)
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot) return;
     snipeCache.set(message.channel.id, {
@@ -58,12 +58,11 @@ client.on('messageDelete', message => {
 });
 
 // ==========================================
-// INTERACTIONS GLOBAL (TICKETS & GIVEAWAYS BOUTONS)
+// INTERACTIONS (TICKETS & GIVEAWAYS BOUTONS)
 // ==========================================
 client.on('interactionCreate', async interaction => {
     if (!interaction.isButton()) return;
 
-    // Gestion de l'ouverture de ticket
     if (interaction.customId === 'create_ticket') {
         const guild = interaction.guild;
         const member = interaction.member;
@@ -94,22 +93,18 @@ client.on('interactionCreate', async interaction => {
         }
     }
 
-    // Gestion de la fermeture de ticket
     if (interaction.customId === 'close_ticket') {
         await interaction.reply("🔒 Fermeture du ticket dans 3 secondes...");
         setTimeout(() => interaction.channel.delete().catch(() => {}), 3000);
     }
 
-    // Gestion de la participation aux Giveaways
-    if (interaction.customId.startsWith('join_giveaway_')) {
-        const giveawayId = interaction.customId.replace('join_giveaway_giveaway_', '');
-        // Gestion basique des entrées de giveaways interactifs
+    if (interaction.customId === 'join_giveaway') {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
 
 // ==========================================
-// AUTOMOD & COMMANDES
+// AUTOMOD & COMMANDES GLOBALES
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
@@ -153,7 +148,7 @@ client.on('messageCreate', async message => {
 
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
     const command = args.shift().toLowerCase();
-    const targetArg = args[0]?.replace(/<@!?|>/g, ''); // Permet d'accepter une mention OU un ID numérique direct
+    const targetArg = args[0]?.replace(/<@!?|>/g, ''); // Supporte les mentions et IDs chiffrés
 
     // ==========================================
     // MENU =HELP COMPLET
@@ -161,12 +156,12 @@ client.on('messageCreate', async message => {
     if (command === 'help') {
         const helpCategories = {
             sanctions: {
-                label: 'Sanctions', emoji: '🔨', description: 'Bannir / Expulser (via Mention ou ID)',
-                commands: ['`=bl <@ID> [raison]` - Bannir', '`=unbl <ID>` - Débannir ID', '`=blist` - Liste des bannis', '`=kick <@ID>` - Expulser']
+                label: 'Sanctions', emoji: '🔨', description: 'Bannir / Expulser (Mention ou ID)',
+                commands: ['`=bl <ID> [raison]` - Bannir', '`=unbl <ID>` - Débannir ID', '`=blist` - Liste des bannis', '`=kick <ID>` - Expulser']
             },
             nettoyage: {
                 label: 'Nettoyage', emoji: '🧹', description: 'Nettoyer les salons',
-                commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <@ID>` - Purger les msgs d\'un membre', '`=snipe` - Voir le dernier msg supprimé']
+                commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <ID>` - Purger les msgs d\'un membre', '`=snipe` - Voir le dernier msg supprimé']
             },
             salons: {
                 label: 'Salons', emoji: '🔒', description: 'Sécurité et gestion des salons',
@@ -174,7 +169,7 @@ client.on('messageCreate', async message => {
             },
             giveaways: {
                 label: 'Giveaways', emoji: '🎉', description: 'Concours interactifs',
-                commands: ['`=gcreate <durée> <gagnants> <prix> [condition]` - Lancer un vrai concours']
+                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer un concours']
             },
             tickets: {
                 label: 'Tickets', emoji: '🎫', description: 'Panneau de support interactif',
@@ -185,8 +180,8 @@ client.on('messageCreate', async message => {
                 commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`']
             },
             config: {
-                label: 'Configuration', emoji: '⚙️', description: 'Owners et paramètres',
-                commands: ['`=owner <ID>` - Ajouter un owner', '`=unowner <ID>` - Retirer un owner', '`=setlog <#salon>`']
+                label: 'Configuration', emoji: '⚙️', description: 'Owners, logs et welcome',
+                commands: ['`=owner <ID>` - Ajouter un owner', '`=unowner <ID>` - Retirer un owner', '`=setlog <#salon>` - Salon de logs', '`=setwelcome <#salon> <msg>` - Message de bienvenue']
             }
         };
 
@@ -280,10 +275,9 @@ client.on('messageCreate', async message => {
     // VRAI SYSTÈME DE GIVEAWAYS INTERACTIF
     // ==========================================
     if (command === 'gcreate') {
-        // Format: =gcreate 1h 1 Nitro [Condition: Être abonné]
         const duration = args[0];
         const winnersCount = parseInt(args[1]);
-        const prize = args.slice(2, -1).join(' ') || args.slice(2).join(' ');
+        const prize = args.slice(2).join(' ');
 
         if (!duration || isNaN(winnersCount) || !prize) {
             return message.reply("Utilisation correcte : `=gcreate <durée ex: 1m/1h> <gagnants> <prix>`");
@@ -296,10 +290,10 @@ client.on('messageCreate', async message => {
             .setFooter({ text: `Lancé par ${message.author.tag}` });
 
         const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('join_giveaway_1').setLabel('🎉 Participer').setStyle(ButtonStyle.Success)
+            new ButtonBuilder().setCustomId('join_giveaway').setLabel('🎉 Participer').setStyle(ButtonStyle.Success)
         );
 
-        const giveawayMsg = await message.channel.send({ embeds: [embed], components: [row] });
+        await message.channel.send({ embeds: [embed], components: [row] });
         return message.reply("🎉 Giveaway lancé avec succès !");
     }
 
@@ -340,15 +334,6 @@ client.on('messageCreate', async message => {
         const banList = bans.map(b => `• \`${b.user.tag}\` (${b.user.id})`).slice(0, 15).join('\n') || "Aucun banni.";
         const embed = new EmbedBuilder().setColor('#ff5555').setTitle("🔨 Liste des bannis").setDescription(banList);
         message.reply({ embeds: [embed] });
-    }
-
-    else if (command === 'unbanall') {
-        const bans = await message.guild.bans.fetch();
-        if (bans.size === 0) return message.reply("Aucun banni.");
-        for (const [userIdVal] of bans) {
-            await message.guild.members.unban(userIdVal).catch(() => {});
-        }
-        message.reply(`🔓 Tous les utilisateurs (${bans.size}) ont été débannis.`);
     }
 
     else if (command === 'kick') {
@@ -445,25 +430,38 @@ client.on('messageCreate', async message => {
             const newChannel = await message.channel.clone();
             await message.channel.delete();
             newChannel.setPosition(position);
-         newChannel.send("💥 Salon nuké et recréé à neuf !");
+            newChannel.send("💥 Salon nuké et recréé à neuf !");
         } catch (e) { message.reply("Erreur."); }
     }
 
-    // CONFIGURATION LOGS
+    // ==========================================
+    // CONFIGURATION (LOGS & WELCOME)
+    // ==========================================
     else if (command === 'setlog') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Mentionne un salon.");
         automod.logChannel = channel.id;
         message.reply(`⚙️ Salon de logs défini sur ${channel}.`);
     }
+
+    else if (command === 'setwelcome') {
+        const channel = message.mentions.channels.first();
+        const customMsg = args.slice(1).join(' ');
+        if (!channel || !customMsg) return message.reply("Utilisation `<#salon> <message>`");
+        automod.welcomeChannel = channel.id;
+        automod.welcomeText = customMsg;
+        message.reply(`✅ Message de bienvenue configuré dans ${channel}.`);
+    }
 });
 
 // ==========================================
-// ANTI-BOT AUTOMOD
+// ÉVÉNEMENTS MEMBRES (ANTI-BOT & WELCOME)
 // ==========================================
 client.on('guildMemberAdd', async member => {
+    const automod = getGuildAutomod(member.guild.id);
+
+    // 1. Anti-Bot
     if (member.user.bot) {
-        const automod = getGuildAutomod(member.guild.id);
         if (automod.antibot) {
             try {
                 await member.kick("Anti-Bot Automod : Bot non autorisé.");
@@ -475,6 +473,19 @@ client.on('guildMemberAdd', async member => {
         }
         return;
     }
+
+    // 2. Message de Bienvenue (=setwelcome)
+    if (!automod.welcomeChannel || !automod.welcomeText) return;
+    const channel = member.guild.channels.cache.get(automod.welcomeChannel);
+    if (!channel) return;
+
+    let text = automod.welcomeText
+        .replace('{mention}', `<@${member.id}>`)
+        .replace('{name}', member.user.username)
+        .replace('{server}', member.guild.name)
+        .replace('{number}', member.guild.memberCount);
+
+    channel.send(text).catch(() => {});
 });
 
 client.login(process.env.DISCORD_TOKEN);
