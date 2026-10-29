@@ -186,7 +186,7 @@ client.on('messageCreate', async message => {
             },
             salons: {
                 label: 'Salons', emoji: '🔒', description: 'Sécurité et gestion des salons',
-                commands: ['`=lock` / `=unlock` - Verrouiller / Déverrouiller', '`=slowmode <sec>` - Ralentissement', '`=nuke` - Recréer un salon', '`=createtext <nom>` - Salon texte', '`=createvoice <nom>` - Salon vocal']
+                commands: ['`=lock` / `=unlock` - Verrouiller / Déverrouiller', '`=slowmode <sec>` - Ralentissement', '`=renew` - Recréer un salon à neuf', '`=createtext <nom>` - Salon texte', '`=createvoice <nom>` - Salon vocal']
             },
             giveaways: {
                 label: 'Giveaways', emoji: '🎉', description: 'Concours interactifs',
@@ -273,7 +273,7 @@ client.on('messageCreate', async message => {
     }
 
     // VÉRIFICATION DES PERMISSIONS SENSIBLES
-    const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
+    const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
     if (sensitiveCommands.includes(command)) {
         if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
@@ -431,7 +431,7 @@ client.on('messageCreate', async message => {
         const limit = parseInt(args[1]) || 50;
 
         try {
-            const fetched = await message.channel.messages.fetch({ limit: 100 });
+            const fetched = await message.channel.messages.fetch({ limit:100 });
             const userMessages = fetched.filter(m => m.author.id === targetUser.id).first(limit);
             await message.channel.bulkDelete(userMessages, true);
             const conf = await message.channel.send(`🧹 ${userMessages.length} messages de **${targetUser.tag}** supprimés.`);
@@ -473,14 +473,34 @@ client.on('messageCreate', async message => {
         } catch (e) { message.reply("Erreur."); }
     }
 
-    else if (command === 'nuke') {
+    // Commande RENEW : Recrée un salon propre et supprime l'ancien
+    else if (command === 'renew') {
         try {
-            const position = message.channel.position;
-            const newChannel = await message.channel.clone();
-            await message.channel.delete();
-            newChannel.setPosition(position);
-            newChannel.send("💥 Salon nuké et recréé à neuf !");
-        } catch (e) { message.reply("Erreur lors du nuke."); }
+            const channel = message.channel;
+            const position = channel.position;
+            const parent = channel.parent;
+            const name = channel.name;
+            const topic = channel.topic;
+            const rateLimitPerUser = channel.rateLimitPerUser;
+            const nsfw = channel.nsfw;
+            const permissionOverwrites = channel.permissionOverwrites.cache;
+
+            const newChannel = await message.guild.channels.create({
+                name: name,
+                type: ChannelType.GuildText,
+                parent: parent,
+                position: position,
+                topic: topic,
+                rateLimitPerUser: rateLimitPerUser,
+                nsfw: nsfw,
+                permissionOverwrites: Array.from(permissionOverwrites.values())
+            });
+
+            await channel.delete();
+            await newChannel.send("💥 Salon renouvelé à neuf !");
+        } catch (e) {
+            message.reply("Erreur lors du renouvellement du salon.");
+        }
     }
 
     else if (command === 'createtext') {
