@@ -164,7 +164,7 @@ client.on('messageCreate', async message => {
         if (!target) return message.reply("Mentionne l'utilisateur à définir comme Owner.");
         
         botOwners.add(target.id);
-        message.reply(`👑 **${target.tag}`} a été ajouté avec succès comme Owner du bot ! Il a désormais accès à toutes les commandes.`);
+        message.reply(`👑 **${target.tag}** a été ajouté avec succès comme Owner du bot ! Il a désormais accès à toutes les commandes.`);
         return;
     }
 
@@ -372,7 +372,7 @@ client.on('guildMemberAdd', async member => {
             const config = serverConfig.get(member.guild.id);
             if (config && config.logChannel) {
                 const logChan = member.guild.channels.cache.get(config.logChannel);
-                if (logChan) logChan.send(`🛡️ **Automod Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé automatiquement car il n'a pas été ajouté par un Owner.`);
+                if (logChan) logChan.send(`🛡️ **Automod Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé automatiquement.`);
             }
         } catch (e) {}
         return;
