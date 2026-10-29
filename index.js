@@ -25,14 +25,29 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Ton compte "77jc" (k2l) enregistré en dur comme Owner principal du bot
+// Ton compte "77jc" (k2l) et ton ID numérique enregistrés définitivement comme Owners permanents
 const botOwners = new Set(["77jc", "1165181057488924765"]); 
 
-// Fonction de vérification Owner
+// Fonction de vérification Owner permanente (ne s'efface jamais au redémarrage)
 function isOwner(message) {
     if (message.author.id === message.guild.ownerId) return true;
     if (botOwners.has(message.author.id) || botOwners.has(message.author.username)) return true;
     return false;
+}
+
+// Fonction pour récupérer la config Automod d'un serveur
+function getGuildAutomod(guildId) {
+    if (!serverConfig.has(guildId)) {
+        serverConfig.set(guildId, {
+            antilink: true,   // Activé par défaut
+            antispam: true,   // Activé par défaut
+            antibot: true,    // Activé par défaut
+            logChannel: null,
+            welcomeChannel: null,
+            welcomeText: null
+        });
+    }
+    return serverConfig.get(guildId);
 }
 
 // Cache Snipe (messages supprimés)
@@ -47,27 +62,30 @@ client.on('messageDelete', message => {
 });
 
 // ==========================================
-// AUTOMOD : Anti-Link, Anti-Spam & Anti-Bot
+// AUTOMOD EN TEMPS RÉEL (ANTI-LINK, SPAM, BOT)
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
+    const automod = getGuildAutomod(message.guild.id);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
 
     // 1. Anti-Link / Anti-Leak
-    const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
-    if (linkRegex.test(message.content) && !isUserAdminOrOwner) {
-        try {
-            await message.delete();
-            const warning = await message.channel.send(`⚠️ ${message.author}, les liens et invitations ne sont pas autorisés.`);
-            setTimeout(() => warning.delete().catch(() => {}), 4000);
-            return;
-        } catch (e) {}
+    if (automod.antilink && !isUserAdminOrOwner) {
+        const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
+        if (linkRegex.test(message.content)) {
+            try {
+                await message.delete();
+                const warning = await message.channel.send(`⚠️ ${message.author}, les liens et invitations sont interdits.`);
+                setTimeout(() => warning.delete().catch(() => {}), 4000);
+                return;
+            } catch (e) {}
+        }
     }
 
     // 2. Anti-Spam (Max 5 messages en 5 secondes)
-    const userId = message.author.id;
-    if (!isUserAdminOrOwner) {
+    if (automod.antispam && !isUserAdminOrOwner) {
+        const userId = message.author.id;
         const now = Date.now();
         let userSpam = spamTracker.get(userId) || [];
         userSpam = userSpam.filter(timestamp => now - timestamp < 5000);
@@ -77,7 +95,7 @@ client.on('messageCreate', async message => {
         if (userSpam.length > 5) {
             try {
                 await message.delete();
-                const warning = await message.channel.send(`🚨 ${message.author}, spam détecté, calme-toi !`);
+                const warning = await message.channel.send(`🚨 ${message.author}, doucement sur le spam !`);
                 setTimeout(() => warning.delete().catch(() => {}), 3000);
                 return;
             } catch (e) {}
@@ -90,7 +108,7 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
 
     // ==========================================
-    // MENU =HELP COMPLET (Toutes les catégories)
+    // MENU =HELP COMPLET ET MIS À JOUR
     // ==========================================
     if (command === 'help') {
         const helpCategories = {
@@ -119,8 +137,8 @@ client.on('messageCreate', async message => {
                 commands: ['`=invites [@membre]` - Voir les invitations', '`=setwelcome <#salon> <msg>` - Message de bienvenue']
             },
             automod: {
-                label: 'Automod', emoji: '🛡️', description: 'Protections automatiques du serveur',
-                commands: ['**Anti-Link** : Bloque les liens et invites', '**Anti-Spam** : Bloque l\'envoi excessif', '**Anti-Bot** : Kick auto des bots non autorisés']
+                label: 'Automod', emoji: '🛡️', description: 'Commandes et états des protections',
+                commands: ['`=antilink on/off` - Activer/Désactiver l\'anti-link', '`=antispam on/off` - Activer/Désactiver l\'anti-spam', '`=antibot on/off` - Activer/Désactiver l\'anti-bot']
             },
             config: {
                 label: 'Configuration', emoji: '⚙️', description: 'Paramètres et rôles du bot',
@@ -168,18 +186,32 @@ client.on('messageCreate', async message => {
     }
 
     // ==========================================
+    // COMMANDES AUTOMOD (=antilink, =antispam, =antibot)
+    // ==========================================
+    if (['antilink', 'antispam', 'antibot'].includes(command)) {
+        if (!isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ Réservé aux Owners et Administrateurs.");
+        }
+        const state = args[0]?.toLowerCase();
+        if (state !== 'on' && state !== 'off') {
+            return message.reply(`Utilisation : \`=${command} on\` ou \`=${command} off\``);
+        }
+        automod[command] = (state === 'on');
+        return message.reply(`🛡️ Protection **${command.toUpperCase()}** réglée sur : **${state.toUpperCase()}**`);
+    }
+
+    // ==========================================
     // COMMANDES =OWNER ET =UNOWNER
     // ==========================================
     if (command === 'owner') {
         if (!isOwner(message)) {
-            return message.reply("❌ Seul le propriétaire du serveur ou un Owner du bot peut ajouter un nouvel Owner.");
+            return message.reply("❌ Seul un Owner du bot peut en ajouter un autre.");
         }
         const target = message.mentions.users.first();
         if (!target) return message.reply("Mentionne l'utilisateur à définir comme Owner.");
         
         botOwners.add(target.id);
-        message.reply(`👑 **${target.tag}** a été ajouté avec succès comme Owner du bot !`);
-        return;
+        return message.reply(`👑 **${target.tag}** a été ajouté avec succès comme Owner du bot !`);
     }
 
     if (command === 'unowner') {
@@ -189,20 +221,19 @@ client.on('messageCreate', async message => {
         const target = message.mentions.users.first();
         if (!target) return message.reply("Mentionne l'utilisateur dont tu veux retirer les droits Owner.");
         
-        if (target.id === message.guild.ownerId) {
-            return message.reply("❌ Impossible de retirer le propriétaire principal du serveur.");
+        if (target.id === message.guild.ownerId || target.id === "1165181057488924765") {
+            return message.reply("❌ Impossible de retirer les droits du propriétaire principal.");
         }
 
         botOwners.delete(target.id);
-        message.reply(`🔒 **${target.tag}** n'est plus Owner du bot.`);
-        return;
+        return message.reply(`🔒 **${target.tag}** n'est plus Owner du bot.`);
     }
 
-    // VÉRIFICATION DES PERMISSIONS POUR LES COMMANDES SENSIBLES
-    const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'gend', 'greroll', 'ticketsetup', 'ticketadd'];
+    // VÉRIFICATION GLOBALE DES PERMISSIONS SENSIBLES (OWNERS / ADMINS)
+    const sensitiveCommands = ['bl', 'unbl', 'blist', 'unbanall', 'kick', 'softbl', 'lock', 'unlock', 'slowmode', 'nuke', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup'];
     if (sensitiveCommands.includes(command)) {
         if (!isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Tu n'es pas **Owner** du bot ou Administrateur.");
+            return message.reply("❌ Commande strictement réservée aux Owners du bot ou Administrateurs.");
         }
     }
 
@@ -389,7 +420,8 @@ client.on('messageCreate', async message => {
     else if (command === 'setlog') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Mentionne un salon.");
-        serverConfig.set(message.guild.id, { ...serverConfig.get(message.guild.id), logChannel: channel.id });
+        const automodConfig = getGuildAutomod(message.guild.id);
+        automodConfig.logChannel = channel.id;
         message.reply(`⚙️ Salon de logs défini sur ${channel}.`);
     }
 
@@ -397,33 +429,37 @@ client.on('messageCreate', async message => {
         const channel = message.mentions.channels.first();
         const customMsg = args.slice(1).join(' ');
         if (!channel || !customMsg) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
-        serverConfig.set(message.guild.id, { ...serverConfig.get(message.guild.id), welcomeChannel: channel.id, welcomeText: customMsg });
+        const automodConfig = getGuildAutomod(message.guild.id);
+        automodConfig.welcomeChannel = channel.id;
+        automodConfig.welcomeText = customMsg;
         message.reply(`✅ Message de bienvenue configuré.`);
     }
 });
 
 // ==========================================
-// ANTI-BOT AUTOMOD
+// ANTI-BOT AUTOMOD (Vérification on/off)
 // ==========================================
 client.on('guildMemberAdd', async member => {
     if (member.user.bot) {
-        try {
-            await member.kick("Anti-Bot Automod : Bot non autorisé.");
-            const config = serverConfig.get(member.guild.id);
-            if (config && config.logChannel) {
-                const logChan = member.guild.channels.cache.get(config.logChannel);
-                if (logChan) logChan.send(`🛡️ **Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé.`);
-            }
-        } catch (e) {}
+        const automod = getGuildAutomod(member.guild.id);
+        if (automod.antibot) {
+            try {
+                await member.kick("Anti-Bot Automod : Bot non autorisé.");
+                        if (automod.logChannel) {
+                    const logChan = member.guild.channels.cache.get(automod.logChannel);
+                    if (logChan) logChan.send(`🛡️ **Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé.`);
+                }
+            } catch (e) {}
+        }
         return;
     }
 
-    const config = serverConfig.get(member.guild.id);
-    if (!config || !config.welcomeChannel) return;
-    const channel = member.guild.channels.cache.get(config.welcomeChannel);
+    const automod = getGuildAutomod(member.guild.id);
+    if (!automod.welcomeChannel || !automod.welcomeText) return;
+    const channel = member.guild.channels.cache.get(automod.welcomeChannel);
     if (!channel) return;
 
-    let text = config.welcomeText
+    let text = automod.welcomeText
         .replace('{mention}', `<@${member.id}>`)
         .replace('{name}', member.user.username)
         .replace('{server}', member.guild.name)
