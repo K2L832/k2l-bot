@@ -551,8 +551,8 @@ client.on('messageCreate', async message => {
                     return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                 }
                 if (interaction.customId === 'confirm_dmall') {
-                    // Réponse instantanée pour contrer le délai des 3 secondes de Discord
-                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
+                    // Réponse instantanée pour valider l'interaction avant le traitement lourd
+                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Récupération des membres...**", embeds: [], components: [] }).catch(() => {});
                     
                     try {
                         await message.guild.members.fetch();
