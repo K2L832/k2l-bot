@@ -279,7 +279,7 @@ client.on('messageCreate', async message => {
             .setColor('#2b2d31')
             .setTitle("🎟️ Tickets")
             .setDescription(
-                "**Bienvenue dans votre espace dédié aux demandes au support de Yuza🌿 !**\n\n" +
+                "**Bienvenue dans votre espace dédié aux supports d'aides !**\n\n" +
                 "Notre équipe est disponible pour vous accompagner et répondre à vos demandes.\n\n" +
                 "**Comportement & Attitude**\n" +
                 "Merci de rester respectueux, patient et courtois avec notre équipe. ⚖️\n\n" +
