@@ -52,6 +52,14 @@ function getGuildAutomod(guildId) {
     return serverConfig.get(guildId);
 }
 
+function sendLog(guild, embed) {
+    if (!guild) return;
+    const automod = getGuildAutomod(guild.id);
+    if (!automod.logChannel) return;
+    const logChan = guild.channels.cache.get(automod.logChannel);
+    if (logChan) logChan.send({ embeds: [embed] }).catch(() => {});
+}
+
 async function fetchTargetUser(client, guild, targetArg) {
     if (!targetArg) return null;
     const cleanId = targetArg.replace(/<@!?|>/g, '');
@@ -64,24 +72,87 @@ async function fetchTargetUser(client, guild, targetArg) {
         return null;
     }
 }
+// ==========================================
+// SYSTÈME DE LOGS AUTOMATIQUES
+// ==========================================
 client.on('messageDelete', message => {
-    if (!message.author || message.author.bot) return;
+    if (!message.author || message.author.bot || !message.guild) return;
     snipeCache.set(message.channel.id, {
         content: message.content || "[Média / Embed]",
         author: message.author.tag,
         avatar: message.author.displayAvatarURL(),
         time: new Date().toLocaleTimeString()
     });
+
+    const embed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('🗑️ Message supprimé')
+        .setDescription(`**Auteur :** ${message.author.tag}\n**Salon :** <#${message.channel.id}>\n**Contenu :**\n\`\`\`${message.content || 'Aucun texte (Embed/Image)'}\`\`\``)
+        .setTimestamp();
+    sendLog(message.guild, embed);
+});
+
+client.on('guildBanAdd', async ban => {
+    const embed = new EmbedBuilder()
+        .setColor('#992D22')
+        .setTitle('🔨 Membre banni')
+        .setDescription(`**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)`)
+        .setTimestamp();
+    sendLog(ban.guild, embed);
+});
+
+client.on('channelCreate', channel => {
+    if (!channel.guild) return;
+    const embed = new EmbedBuilder()
+        .setColor('#57F287')
+        .setTitle('📁 Salon créé')
+        .setDescription(`**Nom :** \`${channel.name}\`\n**Type :** ${channel.type === ChannelType.GuildText ? 'Texte' : 'Vocal'}`)
+        .setTimestamp();
+    sendLog(channel.guild, embed);
+});
+
+client.on('channelDelete', channel => {
+    if (!channel.guild) return;
+    const embed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('🗑️ Salon supprimé')
+        .setDescription(`**Nom :** \`${channel.name}\``)
+        .setTimestamp();
+    sendLog(channel.guild, embed);
+});
+
+client.on('roleCreate', role => {
+    const embed = new EmbedBuilder()
+        .setColor('#57F287')
+        .setTitle('🏷️ Rôle créé')
+        .setDescription(`**Nom :** \`${role.name}\``)
+        .setTimestamp();
+    sendLog(role.guild, embed);
+});
+
+client.on('roleDelete', role => {
+    const embed = new EmbedBuilder()
+        .setColor('#ED4245')
+        .setTitle('🗑️ Rôle supprimé')
+        .setDescription(`**Nom :** \`${role.name}\``)
+        .setTimestamp();
+    sendLog(role.guild, embed);
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt pour le gros trafic.`);
 });
 
 client.on('guildMemberAdd', async member => {
     if (member.user.bot && member.id !== client.user.id) {
         try {
             await member.kick('Anti-bot activé.');
+            const embed = new EmbedBuilder()
+                .setColor('#FEE75C')
+                .setTitle('🤖 Bot bloqué (Anti-bot)')
+                .setDescription(`**Bot :** ${member.user.tag}`)
+                .setTimestamp();
+            sendLog(member.guild, embed);
         } catch (err) {}
     }
     
@@ -96,7 +167,6 @@ client.on('guildMemberAdd', async member => {
         }
     }
 });
-
 // ==========================================
 // INTERACTIONS (TICKETS & GIVEAWAYS)
 // ==========================================
@@ -149,6 +219,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
+
 // ==========================================
 // COMMANDES ET AUTOMOD
 // ==========================================
@@ -293,7 +364,7 @@ client.on('messageCreate', async message => {
     if (command === 'setlog') {
         const channel = message.mentions.channels.first() || message.channel;
         automod.logChannel = channel.id;
-        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
+        return message.reply(`✅ Salon de logs défini avec succès sur ${channel} !`);
     }
 
     if (command === 'setwelcome') {
