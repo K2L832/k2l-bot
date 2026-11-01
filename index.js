@@ -551,8 +551,9 @@ client.on('messageCreate', async message => {
                     return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                 }
                 if (interaction.customId === 'confirm_dmall') {
-                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée !**", embeds: [], components: [] }).catch(() => {});
-                    const statusMsg = await message.channel.send({ content: "📊 Envoi en cours..." });
+                    // Réponse instantanée pour contrer le délai des 3 secondes de Discord
+                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
+                    
                     try {
                         await message.guild.members.fetch();
                         const members = message.guild.members.cache.filter(member => !member.user.bot);
@@ -570,7 +571,7 @@ client.on('messageCreate', async message => {
                             }
                         });
                         await Promise.all(promises);
-                        await statusMsg.edit({ content: `✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})` });
+                        await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
                     } catch (error) {
                         message.channel.send("❌ Erreur lors du DMAll.");
                     }
