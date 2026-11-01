@@ -85,6 +85,10 @@ client.on('guildMemberAdd', async member => {
         } catch (err) {}
     }
 });
+
+// ==========================================
+// INTERACTIONS (TICKETS & GIVEAWAYS)
+// ==========================================
 client.on('interactionCreate', async interaction => {
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
         const guild = interaction.guild;
@@ -134,6 +138,9 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
+// ==========================================
+// COMMANDES ET AUTOMOD
+// ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
@@ -265,7 +272,6 @@ client.on('messageCreate', async message => {
         botOwners.delete(targetUser.username.toLowerCase());
         return message.reply(`🔒 L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) n'est plus Owner.`);
     }
-
     const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'kickbot', 'dmall', 'nuke', 'banall'];
     if (sensitiveCommands.includes(command)) {
         if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
@@ -279,7 +285,7 @@ client.on('messageCreate', async message => {
             .setColor('#2b2d31')
             .setTitle("🎟️ Tickets")
             .setDescription(
-                "**Bienvenue dans votre espace dédié aux supports d'aides !**\n\n" +
+                "**Bienvenue dans votre espace dédié aux demandes au support de Yuza🌿 !**\n\n" +
                 "Notre équipe est disponible pour vous accompagner et répondre à vos demandes.\n\n" +
                 "**Comportement & Attitude**\n" +
                 "Merci de rester respectueux, patient et courtois avec notre équipe. ⚖️\n\n" +
@@ -542,10 +548,10 @@ client.on('messageCreate', async message => {
 
             buttonCollector.on('collect', async interaction => {
                 if (interaction.customId === 'cancel_dmall') {
-                    return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] });
+                    return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                 }
                 if (interaction.customId === 'confirm_dmall') {
-                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée !**", embeds: [], components: [] });
+                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée !**", embeds: [], components: [] }).catch(() => {});
                     const statusMsg = await message.channel.send({ content: "📊 Envoi en cours..." });
                     try {
                         await message.guild.members.fetch();
