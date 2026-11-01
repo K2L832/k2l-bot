@@ -543,16 +543,17 @@ client.on('messageCreate', async message => {
             );
 
             const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-            const buttonFilter = i => isOwner(i) || botOwners.has(i.user.id);
-            const buttonCollector = confirmMsg.createMessageComponentCollector({ filter: buttonFilter, time: 60000, max: 1 });
+            
+            // Collecteur sans filtre bloquant pour éviter les erreurs de timeout
+            const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
 
             buttonCollector.on('collect', async interaction => {
                 if (interaction.customId === 'cancel_dmall') {
                     return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                 }
                 if (interaction.customId === 'confirm_dmall') {
-                    // Réponse instantanée pour valider l'interaction avant le traitement lourd
-                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Récupération des membres...**", embeds: [], components: [] }).catch(() => {});
+                    // Réponse ultra-rapide pour contrer la limite des 3 secondes de Discord
+                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
                     
                     try {
                         await message.guild.members.fetch();
