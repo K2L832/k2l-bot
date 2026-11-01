@@ -84,6 +84,17 @@ client.on('guildMemberAdd', async member => {
             await member.kick('Anti-bot activé.');
         } catch (err) {}
     }
+    
+    const automod = getGuildAutomod(member.guild.id);
+    if (automod.welcomeChannel && automod.welcomeText) {
+        const channel = member.guild.channels.cache.get(automod.welcomeChannel);
+        if (channel) {
+            const welcomeMsg = automod.welcomeText
+                .replace(/\{mention\}/g, `<@${member.id}>`)
+                .replace(/\{name\}/g, member.user.username);
+            channel.send(welcomeMsg).catch(() => {});
+        }
+    }
 });
 
 // ==========================================
@@ -277,6 +288,23 @@ client.on('messageCreate', async message => {
         if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
         }
+    }
+
+    if (command === 'setlog') {
+        const channel = message.mentions.channels.first() || message.channel;
+        automod.logChannel = channel.id;
+        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
+    }
+
+    if (command === 'setwelcome') {
+        const channel = message.mentions.channels.first();
+        const welcomeText = args.slice(1).join(' ');
+        if (!channel || !welcomeText) {
+            return message.reply("Utilisation correcte : `=setwelcome <#salon> <message>`");
+        }
+        automod.welcomeChannel = channel.id;
+        automod.welcomeText = welcomeText;
+        return message.reply(`✅ Salon de bienvenue configuré sur ${channel} !`);
     }
 
     if (command === 'ticketsetup') {
@@ -543,8 +571,6 @@ client.on('messageCreate', async message => {
             );
 
             const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-            
-            // Collecteur sans filtre bloquant pour éviter les erreurs de timeout
             const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
 
             buttonCollector.on('collect', async interaction => {
@@ -552,7 +578,6 @@ client.on('messageCreate', async message => {
                     return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                 }
                 if (interaction.customId === 'confirm_dmall') {
-                    // Réponse ultra-rapide pour contrer la limite des 3 secondes de Discord
                     await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
                     
                     try {
