@@ -612,7 +612,7 @@ client.on('messageCreate', async message => {
                     .setPlaceholder('📁 Choisir une catégorie...')
                     .addOptions(catKeys.map(k => ({
                         label: helpCategories[k].label,
-                        description: `Afficher les commandes de la catégorie ${helpCategories[k].label}`,
+                        description: `Commandes ${helpCategories[k].label}`,
                         value: k,
                         emoji: helpCategories[k].emoji
                     })))
