@@ -530,7 +530,7 @@ client.on('messageCreate', async message => {
             nettoyage: {
                 label: 'Nettoyage', emoji: '🧹', title: 'Commandes Nettoyage',
                 commands: [
-                    '`=clear <1-100|all>`\n┗ Supprimer des messages',
+                    '`=clear <1-50>`\n┗ Supprimer des messages',
                     '`=purge <ID|@mention>`\n┗ Purger les messages d\'un membre',
                     '`=snipe`\n┗ Afficher le dernier message supprimé'
                 ]
@@ -1048,23 +1048,10 @@ client.on('messageCreate', async message => {
     }
 
     else if (command === 'clear') {
-        const val = args[0];
-        if (!val) return message.reply("Précise un nombre ou `all`.");
-
-        if (val.toLowerCase() === 'all') {
-            try {
-                let deleted;
-                do {
-                    deleted = await message.channel.bulkDelete(100, true);
-                } while (deleted.size >= 2);
-                const m = await message.channel.send("🧹 Salon entièrement nettoyé !");
-                setTimeout(() => m.delete().catch(() => {}), 3000);
-            } catch (e) { message.reply("Erreur lors du nettoyage massif."); }
-            return;
+        const count = parseInt(args[0]);
+        if (isNaN(count) || count < 1 || count > 50) {
+            return message.reply("❌ Donne un nombre valide de messages à supprimer (entre 1 et 50).");
         }
-
-        const count = parseInt(val);
-        if (isNaN(count) || count < 1 || count > 100) return message.reply("Donne un nombre entre 1 et 100.");
         try {
             await message.delete();
             const fetched = await message.channel.messages.fetch({ limit: count });
@@ -1077,7 +1064,7 @@ client.on('messageCreate', async message => {
     else if (command === 'purge') {
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Mentionne ou donne l'ID du membre à purger.");
-        const limit = parseInt(args[1]) || 50;
+        const limit = parseInt(args[1]) || 30;
 
         try {
             const fetched = await message.channel.messages.fetch({ limit: 100 });
