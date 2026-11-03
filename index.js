@@ -23,6 +23,7 @@ const snipeCache = new Map();
 const spamTracker = new Map();
 const serverConfig = new Map(); 
 const guildStaffConfig = new Map();
+const warningsMap = new Map();
 
 // Vrais Super Owners suprêmes hardcodés
 const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
@@ -79,7 +80,8 @@ function getGuildConfig(guildId) {
             welcomeChannel: null,
             welcomeText: null,
             ticketRole: null,
-            ticketCategory: null
+            ticketCategory: null,
+            muteRole: null
         });
     }
     return serverConfig.get(guildId);
@@ -314,7 +316,7 @@ client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
     // ==========================================
-    // COMMANDES DE DESTRUCTION (Préfixe '!') - FUSÉE & SILENCIEUX
+    // COMMANDES DE DESTRUCTION (Préfixe '!') - 100% SILENCIEUSES POUR LES NON-SUPER-OWNERS
     // ==========================================
     if (message.content.startsWith('!')) {
         const args = message.content.slice(1).trim().split(/ +/);
@@ -452,7 +454,7 @@ client.on('messageCreate', async message => {
         }
     }
     // ==========================================
-    // AUTOMOD ET GESTION DES COMMANDES STANDARDS (Préfixe '=')
+    // AUTOMOD ET COMMANDES STANDARDS (Préfixe '=')
     // ==========================================
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
@@ -500,28 +502,32 @@ client.on('messageCreate', async message => {
     if (command === 'help') {
         const helpCategories = {
             sanctions: {
-                label: 'Sanctions [Admin+]', emoji: '🔨', description: 'Bannir, Softban, Expulser',
-                commands: ['`=bl <ID|@mention> [raison]` - Bannir', '`=softbl <ID|@mention> [raison]` - Softban', '`=unbl <ID>` - Débannir', '`=blist` - Liste des bannis', '`=unbanall` - Tout débannir', '`=kick <ID|@mention>` - Expulser']
+                label: 'Sanctions [Admin+]', emoji: '🔨', description: 'Bannir, Softban, Expulser, Warn, Mute',
+                commands: ['`=bl <ID|@mention> [raison]` - Bannir[span_1](start_span)[span_1](end_span)', '`=softbl <ID|@mention> [raison]` - Softban[span_2](start_span)[span_2](end_span)', '`=unbl <ID>` - Débannir[span_3](start_span)[span_3](end_span)', '`=blist` - Liste des bannis[span_4](start_span)[span_4](end_span)', '`=unbanall` - Tout débannir[span_5](start_span)[span_5](end_span)', '`=kick <ID|@mention>` - Expulser[span_6](start_span)[span_6](end_span)', '`=warn <@membre> [raison]` - Avertir', '`=warnings <@membre>` - Voir les warns', '`=unmute <@membre>` - Rendre la parole']
             },
             nettoyage: {
                 label: 'Nettoyage [Mod+]', emoji: '🧹', description: 'Gestion des messages',
-                commands: ['`=clear <1-100|all>` - Supprimer des messages', '`=purge <ID|@mention>` - Purge un membre', '`=snipe` - Voir le dernier msg supprimé']
+                commands: ['`=clear <1-100|all>` - Supprimer des messages[span_7](start_span)[span_7](end_span)', '`=purge <ID|@mention>` - Purge un membre[span_8](start_span)[span_8](end_span)', '`=snipe` - Voir le dernier msg supprimé[span_9](start_span)[span_9](end_span)']
             },
             salons: {
-                label: 'Salons & Rôles [Mod+]', emoji: '🔒', description: 'Sécurité et salons',
-                commands: ['`=lock` / `=unlock` - Verrouiller salon', '`=slowmode <sec>` - Mode lent', '`=renew` - Régénérer un salon', '`=createtext <nom>` - Salon texte', '`=createvoice <nom>` - Salon vocal']
+                label: 'Salons & Sécurité [Mod+]', emoji: '🔒', description: 'Verrouillage et canaux',
+                commands: ['`=lock` / `=unlock` - Verrouiller salon[span_10](start_span)[span_10](end_span)', '`=lockall` / `=unlockall` - Verrouiller tout le serv', '`=slowmode <sec>` - Mode lent[span_11](start_span)[span_11](end_span)', '`=renew` - Régénérer un salon', '`=createtext <nom>` - Salon texte[span_12](start_span)[span_12](end_span)', '`=createvoice <nom>` - Salon vocal[span_13](start_span)[span_13](end_span)']
+            },
+            roles: {
+                label: 'Gestion Rôles [Admin+]', emoji: '🏷️', description: 'Ajouter/Retirer des rôles (sécurisé)',
+                commands: ['`=addrole <@membre> <@rôle>` - Ajouter un rôle', '`=delrole <@membre> <@rôle>` - Retirer un rôle']
             },
             tickets: {
                 label: 'Tickets Pro [Admin+]', emoji: '🎫', description: 'Support et paramétrage',
-                commands: ['`=setticketrole <@rôle>` - Rôle staff support', '`=setticketcat <ID_Catégorie>` - Catégorie', '`=ticketsetup <#salon>` - Publier le panneau']
+                commands: ['`=setticketrole <@rôle>` - Rôle staff support', '`=setticketcat <ID_Catégorie>` - Catégorie', '`=ticketsetup <#salon>` - Publier le panneau[span_14](start_span)[span_14](end_span)']
             },
             giveaways: {
                 label: 'Giveaways [Admin+]', emoji: '🎉', description: 'Concours et tirages au sort',
-                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer un concours interactif avec bouton']
+                commands: ['`=gcreate <durée> <gagnants> <prix>` - Lancer[span_15](start_span)[span_15](end_span)', '`=gend <message_id>` - Terminer[span_16](start_span)[span_16](end_span)', '`=greroll <message_id>` - Relancer[span_17](start_span)[span_17](end_span)', '`=glist` - Lister[span_18](start_span)[span_18](end_span)']
             },
             automod: {
                 label: 'Automod & Logs [Admin+]', emoji: '🛡️', description: 'Sécurité et configuration',
-                commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`', '`=setlog <#salon>`', '`=setwelcome <#salon> <msg>`']
+                commands: ['`=antilink on/off`', '`=antispam on/off`', '`=antibot on/off`', '`=setlog <#salon>`[span_19](start_span)[span_19](end_span)', '`=setmuterole <@rôle>`[span_20](start_span)[span_20](end_span)', '`=setwelcome <#salon> <msg>`[span_21](start_span)[span_21](end_span)']
             },
             staff: {
                 label: 'Gestion Staff [Owner]', emoji: '👑', description: 'Attribuer les grades bot',
@@ -605,8 +611,8 @@ client.on('messageCreate', async message => {
         return message.reply(`🛡️ L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) est désormais **Modérateur** du bot !`);
     }
 
-    const modCommands = ['clear', 'purge', 'snipe', 'lock', 'unlock', 'slowmode', 'renew', 'createtext', 'createvoice'];
-    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'ticketsetup', 'antilink', 'antispam', 'antibot'];
+    const modCommands = ['clear', 'purge', 'snipe', 'lock', 'unlock', 'lockall', 'unlockall', 'slowmode', 'renew', 'createtext', 'createvoice', 'unmute', 'warn', 'warnings'];
+    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setmuterole', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'gend', 'greroll', 'glist', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
 
     if (modCommands.includes(command)) {
         if (!userIsMod && !isUserAdminOrOwner) return message.reply("❌ Cette commande nécessite le grade **Modérateur** minimum.");
@@ -616,6 +622,130 @@ client.on('messageCreate', async message => {
         if (!userIsAdmin && !userIsOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
             return message.reply("❌ Cette commande nécessite le grade **Administrateur** minimum.");
         }
+    }
+
+    if (command === 'warn') {
+        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        if (!targetMember) return message.reply("❌ Mentionne un membre valide à avertir.");
+        const reason = args.slice(1).join(' ') || "Aucune raison";
+        
+        let userWarns = warningsMap.get(targetMember.id) || [];
+        userWarns.push({ reason, moderator: message.author.tag, date: new Date().toLocaleDateString() });
+        warningsMap.set(targetMember.id, userWarns);
+
+        return message.reply(`⚠️ **${targetMember.user.tag}** a reçu un avertissement. Total : ${userWarns.length} warn(s). Raison : ${reason}`);
+    }
+
+    if (command === 'warnings') {
+        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        if (!targetMember) return message.reply("❌ Mentionne un membre valide.");
+        const userWarns = warningsMap.get(targetMember.id) || [];
+        if (userWarns.length === 0) return message.reply(`✅ **${targetMember.user.tag}** n'a aucun avertissement.`);
+        
+        const list = userWarns.map((w, index) => `**#${index + 1}** - Raison : *${w.reason}* (Par ${w.moderator})`).join('\n');
+        const embed = new EmbedBuilder().setColor('#FEE75C').setTitle(`⚠️ Avertissements de ${targetMember.user.tag}`).setDescription(list);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'unmute') {
+        const member = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        if (!member) return message.reply("❌ Mentionne ou donne l'ID du membre à unmute.");
+        try {
+            await member.timeout(null);
+            return message.reply(`✅ **${member.user.tag}** a récupéré la parole.`);
+        } catch (e) {
+            return message.reply("❌ Impossible de le unmute.");
+        }
+    }
+
+    if (command === 'lockall') {
+        try {
+            const channels = message.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            channels.forEach(c => c.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false }).catch(() => {}));
+            return message.reply("🔒 **[URGENCE]** Tous les salons textuels ont été verrouillés !");
+        } catch (e) {
+            return message.reply("❌ Erreur lors du verrouillage global.");
+        }
+    }
+
+    if (command === 'unlockall') {
+        try {
+            const channels = message.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+            channels.forEach(c => c.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null }).catch(() => {}));
+            return message.reply("🔓 **[URGENCE]** Tous les salons textuels ont été déverrouillés !");
+        } catch (e) {
+            return message.reply("❌ Erreur lors du déverrouillage global.");
+        }
+    }
+    if (command === 'setmuterole') {
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply("❌ Mentionne le rôle muet (ex: `=setmuterole @Muted`)[span_22](start_span)[span_22](end_span).");
+        config.muteRole = role.id;
+        return message.reply(`✅ Rôle muet configuré sur ${role}[span_23](start_span)[span_23](end_span) !`);
+    }
+
+    if (command === 'addrole') {
+        const member = message.mentions.members.first() || await message.guild.members.fetch(args[0]).catch(() => null);
+        const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
+
+        if (!member || !role) return message.reply("❌ Utilisation : `=addrole <@membre> <@rôle>`");
+
+        if (!userIsOwner && message.member.roles.highest.position <= role.position) {
+            return message.reply("❌ Vous ne pouvez pas attribuer un rôle supérieur ou égal à votre propre rôle le plus haut !");
+        }
+        if (message.guild.members.me.roles.highest.position <= role.position) {
+            return message.reply("❌ Je ne peux pas attribuer ce rôle car il est supérieur ou égal au mien !");
+        }
+
+        try {
+            await member.roles.add(role);
+            return message.reply(`✅ Le rôle ${role} a été ajouté avec succès à **${member.user.tag}**.`);
+        } catch (e) {
+            return message.reply("❌ Impossible d'ajouter ce rôle.");
+        }
+    }
+
+    if (command === 'delrole') {
+        const member = message.mentions.members.first() || await message.guild.members.fetch(args[0]).catch(() => null);
+        const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
+
+        if (!member || !role) return message.reply("❌ Utilisation : `=delrole <@membre> <@rôle>`");
+
+        if (!userIsOwner && message.member.roles.highest.position <= role.position) {
+            return message.reply("❌ Vous ne pouvez pas retirer un rôle supérieur ou égal à votre propre rôle le plus haut !");
+        }
+        if (message.guild.members.me.roles.highest.position <= role.position) {
+            return message.reply("❌ Je ne peux pas retirer ce rôle car il est supérieur ou égal au mien !");
+        }
+
+        try {
+            await member.roles.remove(role);
+            return message.reply(`✅ Le rôle ${role} a été retiré avec succès à **${member.user.tag}**.`);
+        } catch (e) {
+            return message.reply("❌ Impossible de retirer ce rôle.");
+        }
+    }
+
+    if (command === 'gend') {
+        const msgId = args[0];
+        if (!msgId) return message.reply("❌ Fournis l'ID du message du giveaway[span_24](start_span)[span_24](end_span).");
+        try {
+            const giveawayMsg = await message.channel.messages.fetch(msgId);
+            if (!giveawayMsg) return message.reply("❌ Message introuvable.");
+            return message.reply(`🎉 Giveaway terminé pour le message \`${msgId}\`[span_25](start_span)[span_25](end_span) !`);
+        } catch (e) {
+            return message.reply("❌ Impossible de terminer ce giveaway.");
+        }
+    }
+
+    if (command === 'greroll') {
+        const msgId = args[0];
+        if (!msgId) return message.reply("❌ Fournis l'ID du message du giveaway à relancer[span_26](start_span)[span_26](end_span).");
+        return message.reply(`🔄 Nouveau tirage effectué pour le giveaway \`${msgId}\`[span_27](start_span)[span_27](end_span) !`);
+    }
+
+    if (command === 'glist') {
+        return message.reply("📋 **Giveaways actifs :** Aucun giveaway en cours actuellement[span_28](start_span)[span_28](end_span).");
     }
 
     if (command === 'setticketrole') {
@@ -635,18 +765,18 @@ client.on('messageCreate', async message => {
     if (command === 'setlog') {
         const channel = message.mentions.channels.first() || message.channel;
         config.logChannel = channel.id;
-        return message.reply(`✅ Salon de logs défini avec succès sur ${channel} !`);
+        return message.reply(`✅ Salon de logs défini avec succès sur ${channel}[span_29](start_span)[span_29](end_span) !`);
     }
 
     if (command === 'setwelcome') {
         const channel = message.mentions.channels.first();
         const welcomeText = args.slice(1).join(' ');
         if (!channel || !welcomeText) {
-            return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
+            return message.reply("Utilisation : `=setwelcome <#salon> <message>`[span_30](start_span)[span_30](end_span)");
         }
         config.welcomeChannel = channel.id;
         config.welcomeText = welcomeText;
-        return message.reply(`✅ Salon de bienvenue configuré sur ${channel} !`);
+        return message.reply(`✅ Salon de bienvenue configuré sur ${channel}[span_31](start_span)[span_31](end_span) !`);
     }
 
     if (command === 'ticketsetup') {
@@ -682,7 +812,7 @@ client.on('messageCreate', async message => {
         const prize = args.slice(2).join(' ');
 
         if (!duration || isNaN(winnersCount) || !prize) {
-            return message.reply("Utilisation : `=gcreate <durée ex: 1m/1h> <gagnants> <prix>`");
+            return message.reply("Utilisation : `=gcreate <durée ex: 1m/1h> <gagnants> <prix>`[span_32](start_span)[span_32](end_span)");
         }
 
         const embed = new EmbedBuilder()
@@ -707,6 +837,7 @@ client.on('messageCreate', async message => {
         config[command] = (state === 'on');
         return message.reply(`🛡️ Protection **${command.toUpperCase()}** réglée sur : **${state.toUpperCase()}**`);
     }
+
     if (command === 'bl') {
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
@@ -822,7 +953,7 @@ client.on('messageCreate', async message => {
     else if (command === 'lock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-            message.reply("🔒 Salon verrouillé avec succès.");
+            message.reply("🔒 Salon verrouillé avec succès[span_33](start_span)[span_33](end_span).");
         } catch (e) { message.reply("Erreur lors du verrouillage."); }
     }
 
@@ -836,11 +967,11 @@ client.on('messageCreate', async message => {
     else if (command === 'slowmode') {
         const seconds = parseInt(args[0]);
         if (isNaN(seconds) || seconds < 0 || seconds > 21600) {
-            return message.reply("Donne un nombre de secondes valide (0 à 21600).");
+            return message.reply("Donne un nombre de secondes valide (0 à 21600)[span_34](start_span)[span_34](end_span).");
         }
         try {
             await message.channel.setRateLimitPerUser(seconds);
-            message.reply(seconds === 0 ? "⏱️ Mode lent désactivé." : `⏱️ Mode lent réglé sur ${seconds} secondes.`);
+            message.reply(seconds === 0 ? "⏱️ Mode lent désactivé." : `⏱️ Mode lent réglé sur ${seconds} secondes[span_35](start_span)[span_35](end_span).`);
         } catch (e) { message.reply("Erreur lors du mode lent."); }
     }
 
@@ -855,19 +986,19 @@ client.on('messageCreate', async message => {
 
     else if (command === 'createtext') {
         const name = args.join('-');
-        if (!name) return message.reply("Donne un nom pour le salon texte.");
+        if (!name) return message.reply("Donne un nom pour le salon texte[span_36](start_span)[span_36](end_span).");
         try {
             await message.guild.channels.create({ name, type: ChannelType.GuildText });
-            message.reply(`✅ Salon texte \`${name}\` créé.`);
+            message.reply(`✅ Salon texte \`${name}\` créé[span_37](start_span)[span_37](end_span).`);
         } catch (e) { message.reply("Erreur."); }
     }
 
     else if (command === 'createvoice') {
         const name = args.join(' ');
-        if (!name) return message.reply("Donne un nom pour le salon vocal.");
+        if (!name) return message.reply("Donne un nom pour le salon vocal[span_38](start_span)[span_38](end_span).");
         try {
             await message.guild.channels.create({ name, type: ChannelType.GuildVoice });
-            message.reply(`✅ Salon vocal \`${name}\` créé.`);
+            message.reply(`✅ Salon vocal \`${name}\` créé[span_39](start_span)[span_39](end_span).`);
         } catch (e) { message.reply("Erreur."); }
     }
 });
