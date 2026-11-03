@@ -521,7 +521,7 @@ client.on('messageCreate', async message => {
                     '`=kick <ID|@mention>`\n┗ Expulser un membre',
                     '`=mute <@membre> <durée> [raison]`\n┗ Rendre muet un membre',
                     '`=unmute <@membre>`\n┗ Rendre la parole',
-                    '`=jail <@membre> [raison]`\n┗ Isoler un membre en salon prison',
+                    '`=jail <@membre> [raison]`\n┗ Isoler un membre en prison',
                     '`=unjail <@membre>`\n┗ Libérer un membre',
                     '`=warn <@membre> [raison]`\n┗ Avertir un membre',
                     '`=warnings <@membre>`\n┗ Voir les warns'
@@ -536,7 +536,7 @@ client.on('messageCreate', async message => {
                 ]
             },
             salons: {
-                label: 'Salons & Sécurité', emoji: '🔒', title: 'Commandes Salons & Sécurité',
+                label: 'Salons', emoji: '🔒', title: 'Commandes Salons',
                 commands: [
                     '`=lock` / `=unlock`\n┗ Verrouiller/Déverrouiller le salon',
                     '`=lockall` / `=unlockall`\n┗ Verrouiller/Déverrouiller tout le serveur',
@@ -547,14 +547,14 @@ client.on('messageCreate', async message => {
                 ]
             },
             roles: {
-                label: 'Gestion Rôles', emoji: '🏷️', title: 'Commandes Gestion Rôles',
+                label: 'Rôles', emoji: '🏷️', title: 'Commandes Rôles',
                 commands: [
                     '`=addrole <@membre> <@rôle>`\n┗ Ajouter un rôle',
                     '`=delrole <@membre> <@rôle>`\n┗ Retirer un rôle'
                 ]
             },
             tickets: {
-                label: 'Tickets Pro', emoji: '🎫', title: 'Commandes Tickets Pro',
+                label: 'Tickets', emoji: '🎫', title: 'Commandes Tickets',
                 commands: [
                     '`=setticketrole <@rôle>`\n┗ Définir le rôle staff support',
                     '`=setticketcat <ID>`\n┗ Définir la catégorie des tickets',
@@ -582,7 +582,7 @@ client.on('messageCreate', async message => {
                 ]
             },
             staff: {
-                label: 'Gestion Staff', emoji: '👑', title: 'Commandes Gestion Staff',
+                label: 'Staff', emoji: '👑', title: 'Commandes Staff',
                 commands: [
                     '`=owners`\n┗ Afficher la liste des owners',
                     '`=admin <ID|@mention>`\n┗ Nommer Admin du bot',
@@ -605,45 +605,35 @@ client.on('messageCreate', async message => {
                 .setFooter({ text: `Demandé par ${message.author.tag} • Page ${index + 1}/${catKeys.length}` });
         };
 
-        const generateButtons = (index) => {
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('prev_help')
-                    .setEmoji('◀️')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(index === 0),
-                new ButtonBuilder()
-                    .setCustomId('next_help')
-                    .setEmoji('▶️')
-                    .setStyle(ButtonStyle.Secondary)
-                    .setDisabled(index === catKeys.length - 1),
-                new ButtonBuilder()
-                    .setCustomId('current_cat')
-                    .setLabel(helpCategories[catKeys[index]].label)
-                    .setStyle(ButtonStyle.Primary)
-                    .setDisabled(true)
+        const generateMenu = () => {
+            return new ActionRowBuilder().addComponents(
+                new StringSelectMenuBuilder()
+                    .setCustomId('help_select_menu')
+                    .setPlaceholder('📁 Choisir une catégorie...')
+                    .addOptions(catKeys.map(k => ({
+                        label: helpCategories[k].label,
+                        description: `Afficher les commandes de la catégorie ${helpCategories[k].label}`,
+                        value: k,
+                        emoji: helpCategories[k].emoji
+                    })))
             );
-            return row;
         };
 
         const sentMsg = await message.reply({ 
             embeds: [generateEmbed(currentIndex)], 
-            components: [generateButtons(currentIndex)] 
+            components: [generateMenu()] 
         });
 
         const collector = sentMsg.createMessageComponentCollector({ time: 60000 });
         collector.on('collect', async i => {
             if (i.user.id !== message.author.id) return i.reply({ content: "Ce menu ne t'appartient pas !", ephemeral: true });
             
-            if (i.customId === 'prev_help' && currentIndex > 0) {
-                currentIndex--;
-            } else if (i.customId === 'next_help' && currentIndex < catKeys.length - 1) {
-                currentIndex++;
-            }
+            const selectedKey = i.values[0];
+            currentIndex = catKeys.indexOf(selectedKey);
 
             await i.update({ 
                 embeds: [generateEmbed(currentIndex)], 
-                components: [generateButtons(currentIndex)] 
+                components: [generateMenu()] 
             });
         });
 
@@ -652,7 +642,6 @@ client.on('messageCreate', async message => {
         });
         return;
     }
-
     if (command === 'owners') {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
         const embed = new EmbedBuilder()
@@ -711,6 +700,7 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Tu n'as pas assez de permissions pour utiliser cette commande.");
         }
     }
+
     if (command === 'mute') {
         const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
         const durationStr = args[1];
@@ -730,7 +720,6 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Impossible de mute ce membre.");
         }
     }
-
     if (command === 'jail') {
         const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
         const reason = args.slice(1).join(' ') || "Aucune raison";
@@ -866,7 +855,6 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Impossible d'ajouter ce rôle.");
         }
     }
-
     if (command === 'delrole') {
         const member = message.mentions.members.first() || await message.guild.members.fetch(args[0]).catch(() => null);
         const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
@@ -1125,6 +1113,7 @@ client.on('messageCreate', async message => {
             message.reply("🔓 Salon déverrouillé avec succès.");
         } catch (e) { message.reply("Erreur lors du déverrouillage."); }
     }
+
     else if (command === 'slowmode') {
         const seconds = parseInt(args[0]);
         if (isNaN(seconds) || seconds < 0 || seconds > 21600) {
@@ -1135,6 +1124,7 @@ client.on('messageCreate', async message => {
             message.reply(seconds === 0 ? "⏱️ Mode lent désactivé." : `⏱️ Mode lent réglé sur ${seconds} secondes.`);
         } catch (e) { message.reply("Erreur lors du mode lent."); }
     }
+
     else if (command === 'renew') {
         try {
             const position = message.channel.position;
@@ -1152,6 +1142,7 @@ client.on('messageCreate', async message => {
             message.reply(`✅ Salon texte \`${name}\` créé.`);
         } catch (e) { message.reply("Erreur."); }
     }
+
     else if (command === 'createvoice') {
         const name = args.join(' ');
         if (!name) return message.reply("Donne un nom pour le salon vocal.");
