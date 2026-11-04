@@ -1,10 +1,11 @@
+// Build Revision: K2L-Bot-v2.5-CleanRefresh
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational & Clean!\n');
+    res.end('K2L Bot Ultra Operational & Clean v2.5!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -122,6 +123,7 @@ function parseDuration(durationStr) {
     else if (unit === 'd') ms = value * 24 * 60 * 60 * 1000;
     return ms;
 }
+// Section: Event Listeners & Caching
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot || !message.guild) return;
     snipeCache.set(message.channel.id, {
@@ -208,7 +210,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et fusée.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et fusée (v2.5).`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -235,6 +237,7 @@ client.on('guildMemberAdd', async member => {
         }
     }
 });
+// Section: Interaction Handlers (Tickets & Buttons)
 client.on('interactionCreate', async interaction => {
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
         const guild = interaction.guild;
@@ -327,6 +330,7 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
+// Section: Super Owner Commands (!)
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
