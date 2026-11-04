@@ -146,7 +146,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
@@ -660,7 +660,7 @@ client.on('messageCreate', async message => {
         const embed = new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('🏳️‍🌈 Test Gay')
-            .setDescription(`**${target.username}** est à **${percent}%** gay !\n*(Bien évidemment, c'est totalement faux !)*`);
+            .setDescription(`**${target.username}** est à **${percent}%** gay !\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
         return message.reply({ embeds: [embed] });
     }
 
@@ -670,14 +670,18 @@ client.on('messageCreate', async message => {
         const embed = new EmbedBuilder()
             .setColor('#2b2d31')
             .setTitle('🧠 Test de QI')
-            .setDescription(`Le QI de **${target.username}** est estimé à **${iq}** !\n*(Promis, c'est de l'humour)*`);
+            .setDescription(`Le QI de **${target.username}** est estimé à **${iq}** !\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
         return message.reply({ embeds: [embed] });
     }
 
     if (command === 'rate') {
         const subject = args.join(' ') || "quelque chose de mystérieux";
         const score = Math.floor(Math.random() * 11);
-        return message.reply(`⭐ Je donne la note de **${score}/10** à : *${subject}* (C'est scientifique, enfin presque).`);
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('⭐ Rate System')
+            .setDescription(`Je donne la note de **${score}/10** à : *${subject}*\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
     }
 
     if (command === 'horoscope') {
@@ -690,13 +694,21 @@ client.on('messageCreate', async message => {
             "Attention à ton chat, il prépare un coup d'État."
         ];
         const pred = predictions[Math.floor(Math.random() * predictions.length)];
-        return message.reply(`🔮 **Horoscope pour [ ${sign} ] :** ${pred}`);
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle(`🔮 Horoscope : ${sign}`)
+            .setDescription(`${pred}\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
     }
 
     if (command === 'kiss') {
         const target = message.mentions.users.first();
         if (!target) return message.reply("❌ Mentionne quelqu'un à embrasser !");
-        return message.reply(`💋 **${message.author}** fait un gros bisou plein d'amour à **${target}** ! ❤️`);
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('💋 Câlin / Bisou')
+            .setDescription(`**${message.author}** fait un gros bisou plein d'amour à **${target}** ! ❤️\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
     }
 
     if (command === 'owners') {
