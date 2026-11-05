@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Final
+// Build Revision: K2L-Bot-Ultimate-Fixed-v4.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational & Clean Ultimate!\n');
+    res.end('K2L Bot Ultra Operational v4.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -111,6 +111,18 @@ async function fetchTargetUser(client, guild, targetArg) {
     }
 }
 
+async function fetchTargetMember(message, targetArg) {
+    if (!targetArg) return null;
+    const mention = message.mentions.members.first();
+    if (mention) return mention;
+    const cleanId = targetArg.replace(/<@!?|>/g, '');
+    try {
+        return await message.guild.members.fetch(cleanId);
+    } catch (e) {
+        return null;
+    }
+}
+
 function parseDuration(durationStr) {
     if (!durationStr) return null;
     const match = durationStr.match(/^(\d+)([smhd])$/);
@@ -147,7 +159,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#2b2d31')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
@@ -334,9 +346,9 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
-    // Commandes secrètes en '!' réservées aux Super Owners (silencieuses pour les autres)
+    // Commandes secrètes en '!' réservées aux Super Owners (totalement silencieuses pour les autres)
     if (message.content.startsWith('!')) {
-        if (!isSuperOwner(message)) return; // Ignore complètement si ce n'est pas un Super Owner
+        if (!isSuperOwner(message)) return;
 
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
@@ -776,7 +788,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'mute') {
-        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        const targetMember = await fetchTargetMember(message, targetArg);
         const durationStr = args[1];
         const reason = args.slice(2).join(' ') || "Aucune raison";
 
@@ -795,17 +807,20 @@ client.on('messageCreate', async message => {
         }
     }
     if (command === 'jail') {
-        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
-        if (!targetMember) return message.reply("❌ Mentionne un membre à mettre en jail.");
+        if (!targetMember) return message.reply("❌ Mentionne un membre valide à mettre en jail.");
 
         try {
+            const botRolePos = message.guild.members.me.roles.highest.position;
             const roleIds = targetMember.roles.cache
-                .filter(r => r.id !== message.guild.id && !r.managed)
+                .filter(r => r.id !== message.guild.id && !r.managed && r.position < botRolePos)
                 .map(r => r.id);
             jailDataMap.set(targetMember.id, roleIds);
 
-            await targetMember.roles.remove(roleIds).catch(() => {});
+            if (roleIds.length > 0) {
+                await targetMember.roles.remove(roleIds).catch(() => {});
+            }
 
             const jailChannel = await message.guild.channels.create({
                 name: `jail-${targetMember.user.username}`,
@@ -829,8 +844,8 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'unjail') {
-        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
-        if (!targetMember) return message.reply("❌ Mentionne un membre à libérer.");
+        const targetMember = await fetchTargetMember(message, targetArg);
+        if (!targetMember) return message.reply("❌ Mentionne un membre valide à libérer.");
 
         try {
             const savedRoles = jailDataMap.get(targetMember.id);
@@ -849,7 +864,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'warn') {
-        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("❌ Mentionne un membre valide à avertir.");
         const reason = args.slice(1).join(' ') || "Aucune raison";
         
@@ -861,7 +876,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'warnings') {
-        const targetMember = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("❌ Mentionne un membre valide.");
         const userWarns = warningsMap.get(targetMember.id) || [];
         if (userWarns.length === 0) return message.reply(`✅ **${targetMember.user.tag}** n'a aucun avertissement.`);
@@ -872,7 +887,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'unmute') {
-        const member = message.mentions.members.first() || await message.guild.members.fetch(targetArg).catch(() => null);
+        const member = await fetchTargetMember(message, targetArg);
         if (!member) return message.reply("❌ Mentionne ou donne l'ID du membre à unmute.");
         try {
             await member.timeout(null);
@@ -910,7 +925,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'addrole') {
-        const member = message.mentions.members.first() || await message.guild.members.fetch(args[0]).catch(() => null);
+        const member = await fetchTargetMember(message, args[0]);
         const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
 
         if (!member || !role) return message.reply("❌ Utilisation : `=addrole <@membre> <@rôle>`");
@@ -930,7 +945,7 @@ client.on('messageCreate', async message => {
         }
     }
     if (command === 'delrole') {
-        const member = message.mentions.members.first() || await message.guild.members.fetch(args[0]).catch(() => null);
+        const member = await fetchTargetMember(message, args[0]);
         const role = message.mentions.roles.first() || message.guild.roles.cache.get(args[1]);
 
         if (!member || !role) return message.reply("❌ Utilisation : `=delrole <@membre> <@rôle>`");
