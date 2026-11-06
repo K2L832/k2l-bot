@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Fixed-v10.0
+// Build Revision: K2L-Bot-Ultimate-AllCategories-v10.5
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational v10.0!\n');
+    res.end('K2L Bot Operational v10.5 with All Categories!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -271,7 +271,7 @@ client.on('guildMemberAdd', async member => {
                 const embed = new EmbedBuilder()
                     .setColor('#e74c3c')
                     .setTitle('🤖 Bot bloqué (Anti-bot)')
-                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Invité par :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
+                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Inviteur :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
                     .setTimestamp();
                 sendLog(member.guild, embed);
             } catch (err) {}
@@ -693,40 +693,93 @@ client.on('messageCreate', async message => {
     if (command === 'help') {
         const helpCategories = {
             automod: {
-                label: 'AutoMod & Sanctions', emoji: '🛡️', title: 'Gestion AutoMod Avancée',
+                label: 'AutoMod', emoji: '🛡️', title: 'Sécurité & AutoMod',
                 commands: [
-                    '`=antilink on / off`\n┗ Activer / désactiver l\'anti-lien',
+                    '`=antilink on / off`\n┗ Active/Désactive l\'anti-lien',
                     '`=antilink action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction',
-                    '`=antispam on / off`\n┗ Activer / désactiver l\'anti-spam',
-                    '`=antispam action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction',
+                    '`=antispam on / off`\n┗ Active/Désactive l\'anti-spam',
+                    '`=antispam action <action>`\n┗ Définir la sanction',
                     '`=antispam limit <nb>` / `time <sec>`\n┗ Seuils anti-spam',
-                    '`=antibot on / off`\n┗ Activer / désactiver l\'anti-bot',
-                    '`=antibot action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Sanctionner l\'inviteur'
+                    '`=antibot on / off`\n┗ Active/Désactive l\'anti-bot',
+                    '`=antibot action <action>`\n┗ Sanctionner l\'inviteur'
                 ]
             },
             sanctions: {
                 label: 'Sanctions', emoji: '🔨', title: 'Commandes Sanctions',
                 commands: [
                     '`=bl <ID|@mention> [raison]`\n┗ Bannir un utilisateur',
-                    '`=softbl <ID|@mention> [raison]`\n┗ Softban',
+                    '`=softbl <ID|@mention>`\n┗ Softban',
                     '`=unbl <ID>`\n┗ Débannir',
                     '`=blist`\n┗ Liste des bannis',
                     '`=unbanall`\n┗ Tout débannir',
                     '`=kick <ID|@mention>`\n┗ Expulser',
                     '`=mute <@membre> <durée> [raison]`\n┗ Mute',
-                    '`=jail <@membre> [raison]` *(ADMIN)*\n┗ Mettre en prison',
-                    '`=unjail <@membre>` *(ADMIN)*\n┗ Libérer de prison',
-                    '`=warn <@membre> [raison]`\n┗ Avertir'
+                    '`=jail <@membre> [raison]` *(ADMIN)*\n┗ Prison',
+                    '`=unjail <@membre>` *(ADMIN)*\n┗ Libérer',
+                    '`=warn <@membre> [raison]`\n┗ Avertir',
+                    '`=warnings <@membre>`\n┗ Voir les warns'
+                ]
+            },
+            nettoyage: {
+                label: 'Nettoyage', emoji: '🧹', title: 'Nettoyage & Outils',
+                commands: [
+                    '`=clear <1-50>`\n┗ Supprimer des messages',
+                    '`=purge <ID|@mention>`\n┗ Purger les messages d\'un membre',
+                    '`=snipe`\n┗ Afficher le dernier message supprimé',
+                    '`=embed <titre> | <description>`\n┗ Créer un embed stylé'
                 ]
             },
             salons: {
-                label: 'Salons', emoji: '🔒', title: 'Salons & Outils',
+                label: 'Salons', emoji: '🔒', title: 'Salons & Vocaux',
                 commands: [
-                    '`=lock` / `=unlock` *(ADMIN)*\n┗ Verrouiller/Déverrouiller',
-                    '`=embed <titre> | <description>`\n┗ Créer un embed',
-                    '`=clear <1-50>`\n┗ Supprimer des messages',
-                    '`=purge <ID|@mention>`\n┗ Purger un membre',
-                    '`=snipe`\n┗ Voir le dernier message supprimé'
+                    '`=lock` / `=unlock` *(ADMIN)*\n┗ Verrouiller / Déverrouiller',
+                    '`=lockall` / `=unlockall` *(ADMIN)*\n┗ Tout verrouiller / Déverrouiller',
+                    '`=slowmode <sec>`\n┗ Mode lent',
+                    '`=renew`\n┗ Régénérer le salon',
+                    '`=createtext <nom>`\n┗ Créer un salon texte',
+                    '`=createvoice <nom>`\n┗ Créer un salon vocal'
+                ]
+            },
+            roles: {
+                label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles',
+                commands: [
+                    '`=addrole <@membre> <@rôle>`\n┗ Ajouter un rôle',
+                    '`=delrole <@membre> <@rôle>`\n┗ Retirer un rôle'
+                ]
+            },
+            tickets: {
+                label: 'Tickets', emoji: '🎫', title: 'Système de Tickets',
+                commands: [
+                    '`=ticketsetup`\n┗ Ouvrir le panneau de configuration',
+                    '`=setticketpanel <#salon>`\n┗ Salon du panneau',
+                    '`=setticketcat <ID>`\n┗ Catégorie de destination',
+                    '`=setticketlog <#salon>`\n┗ Salon des transcripts',
+                    '`=settickettitle <texte>`\n┗ Titre du panneau',
+                    '`=ticketadd <nom> <emoji> [@rôle]`\n┗ Ajouter une catégorie'
+                ]
+            },
+            giveaways: {
+                label: 'Giveaways', emoji: '🎉', title: 'Commandes Giveaways',
+                commands: [
+                    '`=gcreate <durée> <gagnants> <prix>`\n┗ Lancer un giveaway'
+                ]
+            },
+            fun: {
+                label: 'Fun', emoji: '🎮', title: 'Commandes Fun',
+                commands: [
+                    '`=gay [@membre]`\n┗ Test gay (fake)',
+                    '`=iq [@membre]`\n┗ Test QI (fake)',
+                    '`=rate [@membre] <sujet>`\n┗ Note aléatoire',
+                    '`=horoscope <signe>`\n┗ Horoscope',
+                    '`=kiss <@membre>`\n┗ Bisou'
+                ]
+            },
+            staff: {
+                label: 'Staff', emoji: '👑', title: 'Commandes Staff & Bot',
+                commands: [
+                    '`=owners`\n┗ Liste des owners',
+                    '`=admin <ID|@mention>`\n┗ Nommer Admin',
+                    '`=mod <ID|@mention>`\n┗ Nommer Modérateur'
                 ]
             }
         };
@@ -836,6 +889,27 @@ client.on('messageCreate', async message => {
         const target = message.mentions.users.first() || message.author;
         const iq = Math.floor(Math.random() * 160) - 20;
         const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('🧠 Test de QI').setDescription(`Le QI de **${target.username}** est estimé à **${iq}** !\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'rate') {
+        const subject = args.join(' ') || "quelque chose";
+        const score = Math.floor(Math.random() * 11);
+        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('⭐ Rate System').setDescription(`Je donne la note de **${score}/10** à : *${subject}*\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'horoscope') {
+        const sign = args[0] || "ton signe";
+        const preds = ["Tu vas trébucher.", "Grosse rentrée d'argent...", "Mange un truc bon ce soir.", "Reste au lit.", "Ton chat prépare un coup d'État."];
+        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle(`🔮 Horoscope : ${sign}`).setDescription(`${preds[Math.floor(Math.random()*preds.length)]}\n\n-# ⚠️ Résultats 100% aléatoires et fake.`);
+        return message.reply({ embeds: [embed] });
+    }
+
+    if (command === 'kiss') {
+        const target = message.mentions.users.first();
+        if (!target) return message.reply("❌ Mentionne quelqu'un !");
+        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('💋 Bisou').setDescription(`**${message.author}** fait un bisou à **${target}** ! ❤️`);
         return message.reply({ embeds: [embed] });
     }
 
@@ -1127,6 +1201,26 @@ client.on('messageCreate', async message => {
         try {
             await message.guild.channels.create({ name, type: ChannelType.GuildVoice });
             return message.reply(`✅ Salon vocal \`${name}\` créé.`);
+        } catch (e) { return message.reply("❌ Erreur."); }
+    }
+
+    else if (command === 'addrole') {
+        const member = await fetchTargetMember(message, targetArg);
+        const role = message.mentions.roles.first();
+        if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle>`");
+        try {
+            await member.roles.add(role);
+            return message.reply(`✅ Rôle ${role.name} ajouté à ${member.user.tag}.`);
+        } catch (e) { return message.reply("❌ Erreur."); }
+    }
+
+    else if (command === 'delrole') {
+        const member = await fetchTargetMember(message, targetArg);
+        const role = message.mentions.roles.first();
+        if (!member || !role) return message.reply("Utilisation : `=delrole <@membre> <@rôle>`");
+        try {
+            await member.roles.remove(role);
+            return message.reply(`✅ Rôle ${role.name} retiré de ${member.user.tag}.`);
         } catch (e) { return message.reply("❌ Erreur."); }
     }
 });
