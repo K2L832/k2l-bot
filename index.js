@@ -1,11 +1,12 @@
-// Build Revision: K2L-Bot-Clean-Tickets-v17.0
+
+// Build Revision: K2L-Bot-Clean-Tickets-v18.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Clean Operational v17.0!\n');
+    res.end('K2L Bot Clean Operational v18.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -30,14 +31,20 @@ const jailDataMap = new Map();
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 
+function isSuperOwnerById(userId, username = "", globalName = "") {
+    if (SUPER_OWNERS.has(userId)) return true;
+    if (username && SUPER_OWNERS.has(username.toLowerCase())) return true;
+    if (globalName && SUPER_OWNERS.has(globalName.toLowerCase())) return true;
+    return false;
+}
+
 function isSuperOwner(message) {
     if (!message || !message.author) return false;
     const userId = message.author.id;
     const username = message.author.username.toLowerCase();
     const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
     if (message.guild && message.guild.ownerId === userId && SUPER_OWNERS.has(userId)) return true;
-    if (SUPER_OWNERS.has(userId) || SUPER_OWNERS.has(username) || SUPER_OWNERS.has(globalName)) return true;
-    return false;
+    return isSuperOwnerById(userId, username, globalName);
 }
 
 function isOwner(message) {
@@ -79,7 +86,7 @@ function getGuildConfig(guildId) {
     if (!serverConfig.has(guildId)) {
         serverConfig.set(guildId, {
             antilink: false,
-            antilinkAction: 'delete',
+            antilinkAction: 'delete', // delete, warn, mute, kick, jail, ban
             antispam: false,
             antispamAction: 'mute',
             antispamLimit: 5,
@@ -256,25 +263,30 @@ client.on('guildMemberAdd', async member => {
         const config = getGuildConfig(member.guild.id);
         if (config.antibot) {
             try {
+                // Vérification si l'inviteur est un Super Owner -> Immunisé à l'antibot
                 const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: 28 });
                 const auditLog = fetchedLogs.entries.first();
                 const executor = auditLog ? auditLog.executor : null;
 
-                await member.kick('Anti-bot activé.');
+                const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
 
-                if (executor && !executor.bot) {
-                    const execMember = await member.guild.members.fetch(executor.id).catch(() => null);
-                    if (execMember) {
-                        await executeAutoSanction(member.guild, execMember, config.antibotAction, 'Anti-Bot: Ajout de bot interdit');
+                if (!isExecutorSuperOwner) {
+                    await member.kick('Anti-bot activé.');
+
+                    if (executor && !executor.bot) {
+                        const execMember = await member.guild.members.fetch(executor.id).catch(() => null);
+                        if (execMember) {
+                            await executeAutoSanction(member.guild, execMember, config.antibotAction, 'Anti-Bot: Ajout de bot interdit');
+                        }
                     }
-                }
 
-                const embed = new EmbedBuilder()
-                    .setColor('#e74c3c')
-                    .setTitle('🤖 Bot bloqué (Anti-bot)')
-                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Inviteur :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
-                    .setTimestamp();
-                sendLog(member.guild, embed);
+                    const embed = new EmbedBuilder()
+                        .setColor('#e74c3c')
+                        .setTitle('🤖 Bot bloqué (Anti-bot)')
+                        .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Inviteur :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
+                        .setTimestamp();
+                    sendLog(member.guild, embed);
+                }
             } catch (err) {}
         }
     }
@@ -617,9 +629,10 @@ client.on('messageCreate', async message => {
 
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
-    const isUserAdminOrOwnerCheck = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
+    const isOwnerOrSuper = isOwner(message) || isSuperOwner(message);
 
-    if (config.antilink && !isUserAdminOrOwnerCheck) {
+    // 1. Antilink (Immunité uniquement pour Owners / Super Owners)
+    if (config.antilink && !isOwnerOrSuper) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
             try {
@@ -633,7 +646,8 @@ client.on('messageCreate', async message => {
         }
     }
 
-    if (config.antispam && !isUserAdminOrOwnerCheck) {
+    // 2. Antispam (Immunité uniquement pour Owners / Super Owners)
+    if (config.antispam && !isOwnerOrSuper) {
         const now = Date.now();
         let userSpam = spamTracker.get(userId) || [];
         userSpam = userSpam.filter(timestamp => now - timestamp < config.antispamIntervalMs);
@@ -697,9 +711,12 @@ client.on('messageCreate', async message => {
             automod: {
                 label: 'AutoMod', emoji: '🛡️', title: 'Sécurité & AutoMod',
                 commands: [
-                    '`=antilink on / off`\n┗ Anti-lien',
-                    '`=antispam on / off`\n┗ Anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot'
+                    '`=antilink on / off`\n┗ Activer / Désactiver l\'anti-lien',
+                    '`=setantilink <delete|warn|mute|kick|jail|ban>`\n┗ Sanction anti-lien',
+                    '`=antispam on / off`\n┗ Activer / Désactiver l\'anti-spam',
+                    '`=setantispam <delete|warn|mute|kick|jail|ban>`\n┗ Sanction anti-spam',
+                    '`=antibot on / off`\n┗ Activer / Désactiver l\'anti-bot',
+                    '`=setantibot <delete|warn|mute|kick|jail|ban>`\n┗ Sanction anti-bot'
                 ]
             },
             sanctions: {
@@ -817,6 +834,14 @@ client.on('messageCreate', async message => {
         }
     }
 
+    if (command === 'setantilink') {
+        const action = args[0]?.toLowerCase();
+        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
+        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
+        config.antilinkAction = action;
+        return message.reply(`🛡️ Sanction Anti-Link mise à jour : \`${action}\``);
+    }
+
     if (command === 'antispam') {
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
@@ -825,12 +850,28 @@ client.on('messageCreate', async message => {
         }
     }
 
+    if (command === 'setantispam') {
+        const action = args[0]?.toLowerCase();
+        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
+        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
+        config.antispamAction = action;
+        return message.reply(`🛡️ Sanction Anti-Spam mise à jour : \`${action}\``);
+    }
+
     if (command === 'antibot') {
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
             config.antibot = (sub === 'on');
             return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}**`);
         }
+    }
+
+    if (command === 'setantibot') {
+        const action = args[0]?.toLowerCase();
+        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
+        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
+        config.antibotAction = action;
+        return message.reply(`🛡️ Sanction Anti-Bot mise à jour : \`${action}\``);
     }
 
     if (command === 'gay') {
