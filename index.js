@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Stable-v15.1
+// Build Revision: K2L-Bot-Absolute-Final-v16.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Stable Operational v15.1!\n');
+    res.end('K2L Bot Absolute Final Operational v16.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -31,6 +31,7 @@ const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080
 const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 
 function isSuperOwner(message) {
+    if (!message || !message.author) return false;
     const userId = message.author.id;
     const username = message.author.username.toLowerCase();
     const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
@@ -40,6 +41,7 @@ function isSuperOwner(message) {
 }
 
 function isOwner(message) {
+    if (!message || !message.author) return false;
     const userId = message.author.id;
     const username = message.author.username.toLowerCase();
     const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
@@ -59,6 +61,7 @@ function getStaffRoles(guildId) {
 }
 
 function isAdmin(message) {
+    if (!message) return false;
     if (isOwner(message)) return true;
     if (message.member && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
     const staff = getStaffRoles(message.guild.id);
@@ -66,6 +69,7 @@ function isAdmin(message) {
 }
 
 function isMod(message) {
+    if (!message) return false;
     if (isAdmin(message)) return true;
     const staff = getStaffRoles(message.guild.id);
     return staff.mods.has(message.author.id);
@@ -289,7 +293,7 @@ client.on('guildMemberAdd', async member => {
 
 function getTicketDashboardEmbed(guild, config) {
     const tConfig = config.ticketConfig;
-    const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini (Clique sur Salon)';
+    const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
     const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Non défini';
     const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
     const imgStatus = tConfig.imageUrl ? '✅ Enregistré' : '❌ Aucun';
@@ -302,21 +306,21 @@ function getTicketDashboardEmbed(guild, config) {
         .setTitle('🎫 Configuration des tickets')
         .setDescription(
             `**Salon du panneau :** ${panelChanStr}\n` +
-            `**Catégorie de destination :** ${catDestStr}\n` +
+            `**Catégorie destination :** ${catDestStr}\n` +
             `**Salon des logs :** ${logChanStr}\n\n` +
-            `**Titre actuel :** ${tConfig.title}\n` +
+            `**Titre :** ${tConfig.title}\n` +
             `**Image / GIF :** ${imgStatus}\n` +
             `**État du panneau :** ${pubStatus}\n\n` +
-            `**Catégories actives :** ${catList}\n\n` +
-            `*💡 Tout se configure directement via les boutons ci-dessous sans commandes complexes !*`
+            `**Catégories :** ${catList}\n\n` +
+            `*💡 Configure tout directement via les boutons ci-dessous !*`
         );
 }
 
 function getTicketDashboardRows() {
     return [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salon & Catégorie').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Modifier Titre/Desc').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salons & Catégorie').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Titre & Description').setEmoji('📝').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('t_dash_media').setLabel('Image / GIF').setEmoji('🖼️').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Gérer Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary)
         ),
@@ -441,29 +445,29 @@ client.on('interactionCreate', async interaction => {
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.editReply({ content: `⚙️ **Configuration des salons :**\nPour définir le salon du panneau, tape dans le chat :\n\`=setticketpanel #nom-du-salon\`\n\nPour définir les logs :\n\`=setticketlog #nom-du-salon\`` });
+                return interaction.editReply({ content: `⚙️ **Configuration des salons :**\n• Définir le panneau : \`=setticketpanel #salon\`\n• Définir la catégorie parente : \`=setticketcat <ID_Catégorie>\`\n• Définir les logs : \`=setticketlog #salon\`` });
             }
             if (action === 'texte') {
-                return interaction.editReply({ content: `📝 **Modification du texte :**\n• Pour changer le titre : \`=settickettitle Ton Titre\`\n• Pour changer la description : \`=setticketdesc Ton message de description\`` });
+                return interaction.editReply({ content: `📝 **Textes du panneau :**\n• Titre : \`=settickettitle Ton Titre\`\n• Description : \`=setticketdesc Ton message\`` });
             }
             if (action === 'media') {
-                return interaction.editReply({ content: `🖼️ **Image ou GIF :**\nEnvoie la commande :\n\`=setticketimage https://lien-vers-ton-image.png\`\n*(Tape \`=setticketimage none\` pour le retirer)*` });
+                return interaction.editReply({ content: `🖼️ **Image ou GIF :**\n• Définir : \`=setticketimage https://lien.png\`\n• Retirer : \`=setticketimage none\`` });
             }
             if (action === 'cats') {
                 const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`)`).join('\n') || 'Aucune';
-                return interaction.editReply({ content: `📁 **Gestion des catégories :**\n${catInfo}\n\n• Ajouter une catégorie : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer une catégorie : \`=ticketremove <Nom>\`` });
+                return interaction.editReply({ content: `📁 **Catégories :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer : \`=ticketremove <Nom>\`` });
             }
             if (action === 'disable') {
                 tConfig.published = false;
                 await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
-                return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé avec succès." });
+                return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé." });
             }
             if (action === 'publish') {
                 if (!tConfig.panelChannel) {
-                    return interaction.editReply({ content: "❌ Tu dois d'abord définir un salon ! Utilise `=setticketpanel #salon`." });
+                    return interaction.editReply({ content: "❌ Définis d'abord un salon avec `=setticketpanel #salon` !" });
                 }
                 const targetChan = guild.channels.cache.get(tConfig.panelChannel);
-                if (!targetChan) return interaction.editReply({ content: "❌ Salon du panneau introuvable sur le serveur." });
+                if (!targetChan) return interaction.editReply({ content: "❌ Salon du panneau introuvable." });
 
                 const panelEmbed = new EmbedBuilder()
                     .setColor('#2b2d31')
@@ -494,7 +498,7 @@ client.on('interactionCreate', async interaction => {
     }
 });
 client.on('messageCreate', async message => {
-    if (message.author.bot || !message.guild) return;
+    if (!message.author || message.author.bot || !message.guild) return;
 
     // Commandes secrètes en ! (Réservées Super Owners)
     if (message.content.startsWith('!')) {
@@ -708,29 +712,39 @@ client.on('messageCreate', async message => {
             tickets: {
                 label: 'Tickets', emoji: '🎫', title: 'Gestion des Tickets',
                 commands: [
-                    '`=ticketsetup`\n┗ Ouvrir le panneau de configuration visuel (salons, textes, images, catégories, publication)',
+                    '`=ticketsetup`\n┗ Panneau visuel interactif',
                     '`=ticketadd <nom> <emoji>`\n┗ Ajouter un type de ticket',
                     '`=ticketremove <nom>`\n┗ Supprimer un type de ticket',
-                    '`=tickettypes`\n┗ Lister tous les types de tickets configurés',
+                    '`=tickettypes`\n┗ Lister les types de tickets',
                     '`=setticketpanel <#salon>`\n┗ Définir le salon du panneau',
+                    '`=setticketcat <ID_Catégorie>`\n┗ Définir la catégorie parente',
                     '`=setticketlog <#salon>`\n┗ Définir le salon de logs',
-                    '`=closeticket`\n┗ Fermer et archiver un ticket'
+                    '`=settickettitle <titre>`\n┗ Changer le titre',
+                    '`=setticketdesc <desc>`\n┗ Changer la description',
+                    '`=setticketimage <url>`\n┗ Ajouter une image / GIF',
+                    '`=closeticket`\n┗ Fermer et archiver le ticket'
                 ]
             },
             automod: {
                 label: 'AutoMod', emoji: '🛡️', title: 'Sécurité & AutoMod',
                 commands: [
-                    '`=antilink on / off`\n┗ Active/Désactive l\'anti-lien',
-                    '`=antispam on / off`\n┗ Active/Désactive l\'anti-spam',
-                    '`=antibot on / off`\n┗ Active/Désactive l\'anti-bot'
+                    '`=antilink on / off`\n┗ Anti-lien',
+                    '`=antispam on / off`\n┗ Anti-spam',
+                    '`=antibot on / off`\n┗ Anti-bot'
                 ]
             },
             sanctions: {
                 label: 'Sanctions', emoji: '🔨', title: 'Commandes Sanctions',
                 commands: [
-                    '`=bl <ID|@mention> [raison]`\n┗ Bannir un utilisateur',
+                    '`=bl <ID|@mention> [raison]`\n┗ Bannir',
+                    '`=softbl <ID|@mention>`\n┗ Softban',
+                    '`=unbl <ID>`\n┗ Débannir',
+                    '`=blist`\n┗ Liste des bannis',
+                    '`=unbanall`\n┗ Tout débannir',
                     '`=kick <ID|@mention>`\n┗ Expulser',
                     '`=mute <@membre> <durée> [raison]`\n┗ Mute',
+                    '`=jail <@membre> [raison]`\n┗ Prison',
+                    '`=unjail <@membre>`\n┗ Libérer',
                     '`=warn <@membre> [raison]`\n┗ Avertir'
                 ]
             },
@@ -738,7 +752,9 @@ client.on('messageCreate', async message => {
                 label: 'Nettoyage', emoji: '🧹', title: 'Nettoyage & Outils',
                 commands: [
                     '`=clear <1-50>`\n┗ Supprimer des messages',
-                    '`=snipe`\n┗ Afficher le dernier message supprimé'
+                    '`=purge <ID|@mention>`\n┗ Purger les msgs d\'un membre',
+                    '`=snipe`\n┗ Dernier message supprimé',
+                    '`=embed <titre> | <desc>`\n┗ Créer un embed'
                 ]
             },
             salons: {
@@ -746,7 +762,9 @@ client.on('messageCreate', async message => {
                 commands: [
                     '`=lock` / `=unlock`\n┗ Verrouiller / Déverrouiller',
                     '`=slowmode <sec>`\n┗ Mode lent',
-                    '`=renew`\n┗ Régénérer le salon'
+                    '`=renew`\n┗ Régénérer le salon',
+                    '`=createtext <nom>`\n┗ Créer salon texte',
+                    '`=createvoice <nom>`\n┗ Créer salon vocal'
                 ]
             },
             roles: {
@@ -765,19 +783,22 @@ client.on('messageCreate', async message => {
             fun: {
                 label: 'Fun', emoji: '🎮', title: 'Commandes Fun',
                 commands: [
-                    '`=gay`\n┗ Test gay',
-                    '`=iq`\n┗ Test QI',
-                    '`=rate`\n┗ Rate un truc',
-                    '`=horoscope`\n┗ Horoscope',
-                    '`=kiss`\n┗ Bisou'
+                    '`=gay [@membre]`\n┗ Test gay',
+                    '`=iq [@membre]`\n┗ Test QI',
+                    '`=rate [sujet]`\n┗ Rate un truc',
+                    '`=horoscope [signe]`\n┗ Horoscope',
+                    '`=kiss <@membre>`\n┗ Bisou'
                 ]
             },
             staff: {
                 label: 'Staff', emoji: '👑', title: 'Staff & Bot',
                 commands: [
                     '`=owners`\n┗ Liste des owners',
-                    '`=owner`\n┗ Ajouter un owner',
-                    '`=admin` / `=mod`\n┗ Assigner des rôles staff'
+                    '`=owner <@membre>`\n┗ Ajouter un owner',
+                    '`=admin <@membre>`\n┗ Nommer Admin',
+                    '`=mod <@membre>`\n┗ Nommer Modérateur',
+                    '`=setlog <#salon>`\n┗ Salon de logs général',
+                    '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue'
                 ]
             }
         };
@@ -906,7 +927,7 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
-    // Commandes de gestion centralisée des tickets (syntaxe sécurisée)
+    // Commandes de gestion centralisée des tickets
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
@@ -945,6 +966,13 @@ client.on('messageCreate', async message => {
         if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
         config.ticketConfig.panelChannel = channel.id;
         return message.reply(`✅ Salon du panneau défini sur ${channel} ! Retourne sur \`=ticketsetup\` pour publier.`);
+    }
+
+    if (command === 'setticketcat') {
+        const catId = args[0];
+        if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
+        config.ticketConfig.categoryDestination = catId;
+        return message.reply(`✅ Catégorie de destination des tickets définie : \`${catId}\``);
     }
 
     if (command === 'setticketlog') {
@@ -1051,6 +1079,21 @@ client.on('messageCreate', async message => {
         return message.reply(`⚠️ Warn enregistré (${userWarns.length}).`);
     }
 
+    if (command === 'setlog') {
+        const channel = message.mentions.channels.first() || message.channel;
+        config.logChannel = channel.id;
+        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
+    }
+
+    if (command === 'setwelcome') {
+        const channel = message.mentions.channels.first();
+        const welcomeText = args.slice(1).join(' ');
+        if (!channel || !welcomeText) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
+        config.welcomeChannel = channel.id;
+        config.welcomeText = welcomeText;
+        return message.reply(`✅ Salon de bienvenue configuré !`);
+    }
+
     if (command === 'gcreate') {
         const duration = args[0], winnersCount = parseInt(args[1]), prize = args.slice(2).join(' ');
         if (!duration || isNaN(winnersCount) || !prize) return message.reply("Utilisation : `=gcreate <durée> <gagnants> <prix>`");
@@ -1067,11 +1110,31 @@ client.on('messageCreate', async message => {
         return message.reply(`🔨 **${targetUser.tag}** banni.`);
     }
 
+    else if (command === 'softbl') {
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("ID invalide.");
+        await message.guild.members.ban(targetUser.id, { deleteMessageSeconds: 604800 });
+        await message.guild.members.unban(targetUser.id);
+        return message.reply(`🌪️ Softban effectué.`);
+    }
+
     else if (command === 'unbl') {
         const userId = targetArg?.replace(/<@!?|>/g, '');
         if (!userId) return message.reply("ID requis.");
         await message.guild.members.unban(userId);
         return message.reply(`🔓 Débanni.`);
+    }
+
+    else if (command === 'blist') {
+        const bans = await message.guild.bans.fetch();
+        const banList = bans.map(b => `• **${b.user.tag}**`).slice(0, 15).join('\n') || "Aucun.";
+        return message.reply({ embeds: [new EmbedBuilder().setTitle("🔨 Bannissements").setDescription(banList)] });
+    }
+
+    else if (command === 'unbanall') {
+        const bans = await message.guild.bans.fetch();
+        for (const [id] of bans) await message.guild.members.unban(id).catch(() => {});
+        return message.reply(`🔓 Tous débannis (${bans.size}).`);
     }
 
     else if (command === 'kick') {
@@ -1088,6 +1151,14 @@ client.on('messageCreate', async message => {
         await message.delete();
         const fetched = await message.channel.messages.fetch({ limit: count });
         await message.channel.bulkDelete(fetched, true);
+        return;
+    }
+
+    else if (command === 'purge') {
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        const fetched = await message.channel.messages.fetch({ limit: 100 });
+        const userMsgs = fetched.filter(m => m.author.id === targetUser.id).first(30);
+        await message.channel.bulkDelete(userMsgs, true);
         return;
     }
 
