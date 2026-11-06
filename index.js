@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Dashboard-Tickets-v7.1
+// Build Revision: K2L-Bot-Ultimate-Dashboard-Tickets-v7.2
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational with Interactive Ticket Dashboard v7.1!\n');
+    res.end('K2L Bot Ultra Operational with Interactive Ticket Dashboard v7.2!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
