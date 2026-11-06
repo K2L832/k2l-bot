@@ -172,7 +172,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#f39c12')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
