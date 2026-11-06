@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Fixed-v4.0
+// Build Revision: K2L-Bot-Ultimate-FullLogs-Tickets-v6.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational v4.0!\n');
+    res.end('K2L Bot Ultra Operational with Full Logs & Custom Tickets v6.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -82,6 +82,8 @@ function getGuildConfig(guildId) {
             welcomeText: null,
             ticketRole: null,
             ticketCategory: null,
+            ticketTitle: "🎟️ Support & Tickets",
+            ticketDescription: "Bienvenue dans votre espace dédié au support !\nSélectionnez ci-dessous la catégorie qui correspond à votre demande.",
             muteRole: null,
             jailRole: null,
             jailCategory: null
@@ -145,7 +147,7 @@ client.on('messageDelete', message => {
     });
 
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#e74c3c')
         .setTitle('🗑️ Message supprimé')
         .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Contenu :**\n\`\`\`${message.content || 'Aucun texte (Embed/Image/Fichier)'}\`\`\``)
         .setTimestamp();
@@ -157,16 +159,16 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     if (oldMessage.content === newMessage.content) return;
 
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#f39c12')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag}\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
 
 client.on('guildBanAdd', ban => {
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#c0392b')
         .setTitle('🔨 Membre banni')
         .setDescription(`**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)`)
         .setTimestamp();
@@ -175,7 +177,7 @@ client.on('guildBanAdd', ban => {
 
 client.on('guildBanRemove', ban => {
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#2ecc71')
         .setTitle('🔓 Membre débanni')
         .setDescription(`**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)`)
         .setTimestamp();
@@ -185,7 +187,7 @@ client.on('guildBanRemove', ban => {
 client.on('channelCreate', channel => {
     if (!channel.guild) return;
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#3498db')
         .setTitle('📁 Salon créé')
         .setDescription(`**Nom :** \`${channel.name}\`\n**Type :** ${channel.type === ChannelType.GuildText ? 'Texte' : 'Vocal'}`)
         .setTimestamp();
@@ -195,7 +197,7 @@ client.on('channelCreate', channel => {
 client.on('channelDelete', channel => {
     if (!channel.guild) return;
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#e74c3c')
         .setTitle('🗑️ Salon supprimé')
         .setDescription(`**Nom :** \`${channel.name}\``)
         .setTimestamp();
@@ -204,7 +206,7 @@ client.on('channelDelete', channel => {
 
 client.on('roleCreate', role => {
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#9b59b6')
         .setTitle('🏷️ Rôle créé')
         .setDescription(`**Nom :** \`${role.name}\``)
         .setTimestamp();
@@ -213,7 +215,7 @@ client.on('roleCreate', role => {
 
 client.on('roleDelete', role => {
     const embed = new EmbedBuilder()
-        .setColor('#2b2d31')
+        .setColor('#e74c3c')
         .setTitle('🗑️ Rôle supprimé')
         .setDescription(`**Nom :** \`${role.name}\``)
         .setTimestamp();
@@ -221,7 +223,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et opérationnel.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt et opérationnel avec tous les logs.`);
 });
 
 client.on('guildMemberAdd', async member => {
@@ -231,9 +233,9 @@ client.on('guildMemberAdd', async member => {
             try {
                 await member.kick('Anti-bot activé.');
                 const embed = new EmbedBuilder()
-                    .setColor('#2b2d31')
+                    .setColor('#e74c3c')
                     .setTitle('🤖 Bot bloqué (Anti-bot)')
-                    .setDescription(`**Bot :** ${member.user.tag}`)
+                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Statut :** Non autorisé sur le serveur.`)
                     .setTimestamp();
                 sendLog(member.guild, embed);
             } catch (err) {}
@@ -300,6 +302,15 @@ client.on('interactionCreate', async interaction => {
 
             const rolePing = config.ticketRole ? `<@&${config.ticketRole}>` : `<@${member.id}>`;
             await ticketChannel.send({ content: rolePing, embeds: [embed], components: [closeRow] });
+
+            // Log ouverture ticket
+            const logEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('🎫 Ticket ouvert')
+                .setDescription(`**Membre :** ${member.user.tag} (\`${member.user.id}\`)\n**Salon :** ${ticketChannel}\n**Type :** \`${categoryName}\``)
+                .setTimestamp();
+            sendLog(guild, logEmbed);
+
             return interaction.reply({ content: `✅ Votre ticket a été ouvert avec succès : ${ticketChannel}`, ephemeral: true });
         } catch (e) {
             return interaction.reply({ content: "❌ Erreur lors de la création du salon de ticket.", ephemeral: true });
@@ -320,7 +331,7 @@ client.on('interactionCreate', async interaction => {
             const attachment = new AttachmentBuilder(buffer, { name: `transcription-${channel.name}.txt` });
 
             const logEmbed = new EmbedBuilder()
-                .setColor('#2b2d31')
+                .setColor('#e74c3c')
                 .setTitle('📁 Ticket fermé & Archivé')
                 .setDescription(`**Salon :** \`${channel.name}\`\n**Fermé par :** ${interaction.user.tag}`)
                 .setTimestamp();
@@ -492,6 +503,7 @@ client.on('messageCreate', async message => {
     const userIsMod = isMod(message);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || userIsOwner;
 
+    // --- AUTOMOD & FULL LOGS ---
     if (config.antilink && !isUserAdminOrOwner) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
@@ -499,6 +511,14 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 const warning = await message.channel.send(`⚠️ ${message.author}, les liens et invitations externes sont interdits.`);
                 setTimeout(() => warning.delete().catch(() => {}), 4000);
+
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#f39c12')
+                    .setTitle('🛡️ Anti-Link déclenché')
+                    .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Message :** \`${message.content}\``)
+                    .setTimestamp();
+                sendLog(message.guild, logEmbed);
+
                 return;
             } catch (e) {}
         }
@@ -516,6 +536,14 @@ client.on('messageCreate', async message => {
                 await message.delete();
                 const warning = await message.channel.send(`🚨 ${message.author}, veuillez ralentir l'envoi de messages (Anti-spam).`);
                 setTimeout(() => warning.delete().catch(() => {}), 3000);
+
+                const logEmbed = new EmbedBuilder()
+                    .setColor('#e74c3c')
+                    .setTitle('🚨 Anti-Spam déclenché')
+                    .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Action :** Spam excessif détecté et messages bloqués.`)
+                    .setTimestamp();
+                sendLog(message.guild, logEmbed);
+
                 return;
             } catch (e) {}
         }
@@ -577,6 +605,8 @@ client.on('messageCreate', async message => {
                 commands: [
                     '`=setticketrole <@rôle>`\n┗ Définir le rôle staff support',
                     '`=setticketcat <ID>`\n┗ Définir la catégorie des tickets',
+                    '`=settickettitle <texte>`\n┗ Modifier le titre du panneau',
+                    '`=setticketdesc <texte>`\n┗ Modifier la description',
                     '`=ticketsetup <#salon>`\n┗ Publier le panneau de tickets'
                 ]
             },
@@ -775,7 +805,7 @@ client.on('messageCreate', async message => {
     }
 
     const modCommands = ['clear', 'purge', 'snipe', 'lock', 'unlock', 'lockall', 'unlockall', 'slowmode', 'renew', 'createtext', 'createvoice', 'unmute', 'warn', 'warnings', 'jail', 'unjail', 'mute'];
-    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setmuterole', 'setwelcome', 'setticketrole', 'setticketcat', 'gcreate', 'gend', 'greroll', 'glist', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
+    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'setlog', 'setmuterole', 'setwelcome', 'setticketrole', 'setticketcat', 'settickettitle', 'setticketdesc', 'gcreate', 'gend', 'greroll', 'glist', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
 
     if (modCommands.includes(command)) {
         if (!userIsMod && !isUserAdminOrOwner) return message.reply("❌ Tu n'as pas assez de permissions pour utiliser cette commande.");
@@ -801,6 +831,13 @@ client.on('messageCreate', async message => {
 
         try {
             await targetMember.timeout(ms, reason);
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('🔇 Membre mute')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}\n**Durée :** ${durationStr}\n**Raison :** ${reason}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`🔇 **${targetMember.user.tag}** a été mis en sourdine pour ${durationStr}. Raison : ${reason}`);
         } catch (e) {
             return message.reply("❌ Impossible de mute ce membre.");
@@ -837,6 +874,14 @@ client.on('messageCreate', async message => {
                 .setDescription(`**Raison :** ${reason}\n\nUn membre de l'équipe viendra régler votre situation ici.`);
 
             await jailChannel.send({ content: `<@${targetMember.id}>`, embeds: [embed] });
+
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('🔒 Membre mis en jail')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}\n**Salon :** ${jailChannel}\n**Raison :** ${reason}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`🔒 **${targetMember.user.tag}** a été envoyé en jail. Salon : ${jailChannel}`);
         } catch (e) {
             return message.reply("❌ Erreur lors de la mise en jail.");
@@ -857,6 +902,13 @@ client.on('messageCreate', async message => {
             const jailChan = message.guild.channels.cache.find(c => c.name === `jail-${targetMember.user.username.toLowerCase()}`);
             if (jailChan) await jailChan.delete().catch(() => {});
 
+            const logEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🔓 Membre libéré du jail')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`🔓 **${targetMember.user.tag}** a été libéré du jail et a récupéré ses rôles.`);
         } catch (e) {
             return message.reply("❌ Erreur lors du unjail.");
@@ -871,6 +923,13 @@ client.on('messageCreate', async message => {
         let userWarns = warningsMap.get(targetMember.id) || [];
         userWarns.push({ reason, moderator: message.author.tag, date: new Date().toLocaleDateString() });
         warningsMap.set(targetMember.id, userWarns);
+
+        const logEmbed = new EmbedBuilder()
+            .setColor('#f39c12')
+            .setTitle('⚠️ Avertissement (Warn)')
+            .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}\n**Raison :** ${reason}\n**Total warns :** ${userWarns.length}`)
+            .setTimestamp();
+        sendLog(message.guild, logEmbed);
 
         return message.reply(`⚠️ **${targetMember.user.tag}** a reçu un avertissement. Total : ${userWarns.length} warn(s). Raison : ${reason}`);
     }
@@ -891,6 +950,13 @@ client.on('messageCreate', async message => {
         if (!member) return message.reply("❌ Mentionne ou donne l'ID du membre à unmute.");
         try {
             await member.timeout(null);
+            const logEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🔊 Membre unmute')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${member.user.tag}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`✅ **${member.user.tag}** a récupéré la parole.`);
         } catch (e) {
             return message.reply("❌ Impossible de le unmute.");
@@ -901,6 +967,14 @@ client.on('messageCreate', async message => {
         try {
             const channels = message.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
             channels.forEach(c => c.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false }).catch(() => {}));
+            
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('🔒 Verrouillage global (Lockall)')
+                .setDescription(`**Exécuté par :** ${message.author.tag}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply("🔒 **[URGENCE]** Tous les salons textuels ont été verrouillés !");
         } catch (e) {
             return message.reply("❌ Erreur lors du verrouillage global.");
@@ -911,6 +985,14 @@ client.on('messageCreate', async message => {
         try {
             const channels = message.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
             channels.forEach(c => c.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null }).catch(() => {}));
+            
+            const logEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🔓 Déverrouillage global (Unlockall)')
+                .setDescription(`**Exécuté par :** ${message.author.tag}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply("🔓 **[URGENCE]** Tous les salons textuels ont été déverrouillés !");
         } catch (e) {
             return message.reply("❌ Erreur lors du déverrouillage global.");
@@ -939,6 +1021,13 @@ client.on('messageCreate', async message => {
 
         try {
             await member.roles.add(role);
+            const logEmbed = new EmbedBuilder()
+                .setColor('#3498db')
+                .setTitle('➕ Rôle ajouté à un membre')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${member.user.tag}\n**Rôle :** ${role.name}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`✅ Le rôle ${role} a été ajouté avec succès à **${member.user.tag}**.`);
         } catch (e) {
             return message.reply("❌ Impossible d'ajouter ce rôle.");
@@ -959,6 +1048,13 @@ client.on('messageCreate', async message => {
 
         try {
             await member.roles.remove(role);
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('➖ Rôle retiré à un membre')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${member.user.tag}\n**Rôle :** ${role.name}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             return message.reply(`✅ Le rôle ${role} a été retiré avec succès à **${member.user.tag}**.`);
         } catch (e) {
             return message.reply("❌ Impossible de retirer ce rôle.");
@@ -1001,6 +1097,20 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Catégorie de stockage des tickets configurée (\`${catId}\`).`);
     }
 
+    if (command === 'settickettitle') {
+        const newTitle = args.join(' ');
+        if (!newTitle) return message.reply("❌ Fournis un titre pour le panneau (ex: `=settickettitle 🎟️ Support Officiel`).");
+        config.ticketTitle = newTitle;
+        return message.reply(`✅ Titre du panneau de tickets mis à jour : **${newTitle}**`);
+    }
+
+    if (command === 'setticketdesc') {
+        const newDesc = args.join(' ');
+        if (!newDesc) return message.reply("❌ Fournis une description pour le panneau.");
+        config.ticketDescription = newDesc;
+        return message.reply(`✅ Description du panneau de tickets mise à jour avec succès !`);
+    }
+
     if (command === 'setlog') {
         const channel = message.mentions.channels.first() || message.channel;
         config.logChannel = channel.id;
@@ -1022,12 +1132,8 @@ client.on('messageCreate', async message => {
         const targetChannel = message.mentions.channels.first() || message.channel;
         const embed = new EmbedBuilder()
             .setColor('#2b2d31')
-            .setTitle("🎟️ Support & Tickets")
-            .setDescription(
-                "**Bienvenue dans votre espace dédié au support !**\n\n" +
-                "Sélectionnez ci-dessous la catégorie qui correspond à votre demande pour ouvrir un salon privé avec l'équipe.\n\n" +
-                "*Restez courtois et respectueux.* ⚖️"
-            );
+            .setTitle(config.ticketTitle)
+            .setDescription(config.ticketDescription);
 
         const row = new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder()
@@ -1042,7 +1148,7 @@ client.on('messageCreate', async message => {
         );
 
         await targetChannel.send({ embeds: [embed], components: [row] });
-        return message.reply("✅ Panneau de tickets publié avec succès dans le salon cible !");
+        return message.reply("✅ Panneau de tickets personnalisé publié avec succès dans le salon cible !");
     }
 
     if (command === 'gcreate') {
@@ -1074,6 +1180,14 @@ client.on('messageCreate', async message => {
             return message.reply(`Utilisation : \`=${command} on\` ou \`=${command} off\``);
         }
         config[command] = (state === 'on');
+        
+        const logEmbed = new EmbedBuilder()
+            .setColor('#9b59b6')
+            .setTitle('🛡️ Modification de protection')
+            .setDescription(`**Modérateur :** ${message.author.tag}\n**Protection :** \`${command.toUpperCase()}\`\n**État :** **${state.toUpperCase()}**`)
+            .setTimestamp();
+        sendLog(message.guild, logEmbed);
+
         return message.reply(`🛡️ Protection **${command.toUpperCase()}** réglée sur : **${state.toUpperCase()}**`);
     }
 
@@ -1083,6 +1197,13 @@ client.on('messageCreate', async message => {
         const reason = args.slice(1).join(' ') || "Aucune raison spécifiée";
         try {
             await message.guild.members.ban(targetUser.id, { reason });
+            const logEmbed = new EmbedBuilder()
+                .setColor('#c0392b')
+                .setTitle('🔨 Bannissement (Ban)')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Utilisateur :** ${targetUser.tag} (\`${targetUser.id}\`)\n**Raison :** ${reason}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply(`🔨 L'utilisateur **${targetUser.tag}** (\`${targetUser.id}\`) a été banni. Raison : ${reason}`);
         } catch (e) { message.reply("Impossible de bannir cet utilisateur."); }
     }
@@ -1094,6 +1215,14 @@ client.on('messageCreate', async message => {
         try {
             await message.guild.members.ban(targetUser.id, { reason, deleteMessageSeconds: 604800 });
             await message.guild.members.unban(targetUser.id);
+            
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e67e22')
+                .setTitle('🌪️ Softban')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Utilisateur :** ${targetUser.tag}\n**Raison :** ${reason}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply(`🌪️ L'utilisateur **${targetUser.tag}** a subi un softban (messages effacés).`);
         } catch (e) { message.reply("Erreur lors du softban."); }
     }
@@ -1104,6 +1233,14 @@ client.on('messageCreate', async message => {
         try {
             const user = await client.users.fetch(userId);
             await message.guild.members.unban(userId);
+            
+            const logEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🔓 Débannissement (Unban)')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Utilisateur :** ${user.tag}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply(`🔓 L'utilisateur **${user.tag}** a été débanni.`);
         } catch (e) { message.reply("Utilisateur introuvable dans les bannissements."); }
     }
@@ -1121,6 +1258,14 @@ client.on('messageCreate', async message => {
         for (const [userIdVal] of bans) {
             await message.guild.members.unban(userIdVal).catch(() => {});
         }
+        
+        const logEmbed = new EmbedBuilder()
+            .setColor('#2ecc71')
+            .setTitle('🔓 Débannissement massif (Unbanall)')
+            .setDescription(`**Modérateur :** ${message.author.tag}\n**Total :** ${bans.size} utilisateurs`)
+            .setTimestamp();
+        sendLog(message.guild, logEmbed);
+
         message.reply(`🔓 Tous les utilisateurs (${bans.size}) ont été débannis.`);
     }
 
@@ -1132,6 +1277,13 @@ client.on('messageCreate', async message => {
         const reason = args.slice(1).join(' ') || "Aucune raison";
         try {
             await member.kick(reason);
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e67e22')
+                .setTitle('👢 Expulsion (Kick)')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Membre :** ${targetUser.tag}\n**Raison :** ${reason}`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply(`✅ Le membre **${targetUser.tag}** a été expulsé.`);
         } catch (e) { message.reply("Impossible d'expulser ce membre."); }
     }
@@ -1179,6 +1331,13 @@ client.on('messageCreate', async message => {
     else if (command === 'lock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
+            const logEmbed = new EmbedBuilder()
+                .setColor('#e74c3c')
+                .setTitle('🔒 Salon verrouillé')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Salon :** <#${message.channel.id}>`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply("🔒 Salon verrouillé avec succès.");
         } catch (e) { message.reply("Erreur lors du verrouillage."); }
     }
@@ -1186,6 +1345,13 @@ client.on('messageCreate', async message => {
     else if (command === 'unlock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
+            const logEmbed = new EmbedBuilder()
+                .setColor('#2ecc71')
+                .setTitle('🔓 Salon déverrouillé')
+                .setDescription(`**Modérateur :** ${message.author.tag}\n**Salon :** <#${message.channel.id}>`)
+                .setTimestamp();
+            sendLog(message.guild, logEmbed);
+
             message.reply("🔓 Salon déverrouillé avec succès.");
         } catch (e) { message.reply("Erreur lors du déverrouillage."); }
     }
