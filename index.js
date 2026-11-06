@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Tickets-Exact-v12.0
+// Build Revision: K2L-Bot-Ultimate-Graveuhq-Fixed-v12.5
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Operational v12.0!\n');
+    res.end('K2L Bot Operational v12.5!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -27,8 +27,9 @@ const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
 
-const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
-const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
+// Ton ID (1166445202148442112) et ton pseudo (graveuhq) sont maintenant prioritaires
+const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
+const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 
 function isSuperOwner(message) {
     const userId = message.author.id;
