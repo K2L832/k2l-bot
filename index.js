@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Master-v9.5
+// Build Revision: K2L-Bot-Ultimate-Fixed-v10.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Master Ultimate Operational with All Commands & Configurable AutoMod v9.5!\n');
+    res.end('K2L Bot Ultra Operational v10.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -248,7 +248,7 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt avec Master Suite.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
 });
 client.on('guildMemberAdd', async member => {
     if (member.user.bot && member.id !== client.user.id) {
@@ -271,7 +271,7 @@ client.on('guildMemberAdd', async member => {
                 const embed = new EmbedBuilder()
                     .setColor('#e74c3c')
                     .setTitle('🤖 Bot bloqué (Anti-bot)')
-                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Invité par :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction appliquée :** \`${config.antibotAction}\``)
+                    .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Invité par :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
                     .setTimestamp();
                 sendLog(member.guild, embed);
             } catch (err) {}
@@ -490,7 +490,6 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
-    // Commandes secrètes Owner en '!'
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -631,9 +630,9 @@ client.on('messageCreate', async message => {
 
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
-    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
+    const isUserAdminOrOwnerCheck = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
 
-    if (config.antilink && !isUserAdminOrOwner) {
+    if (config.antilink && !isUserAdminOrOwnerCheck) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
             try {
@@ -647,7 +646,7 @@ client.on('messageCreate', async message => {
         }
     }
 
-    if (config.antispam && !isUserAdminOrOwner) {
+    if (config.antispam && !isUserAdminOrOwnerCheck) {
         const now = Date.now();
         let userSpam = spamTracker.get(userId) || [];
         userSpam = userSpam.filter(timestamp => now - timestamp < config.antispamIntervalMs);
@@ -697,37 +696,37 @@ client.on('messageCreate', async message => {
                 label: 'AutoMod & Sanctions', emoji: '🛡️', title: 'Gestion AutoMod Avancée',
                 commands: [
                     '`=antilink on / off`\n┗ Activer / désactiver l\'anti-lien',
-                    '`=antilink action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction anti-lien',
+                    '`=antilink action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction',
                     '`=antispam on / off`\n┗ Activer / désactiver l\'anti-spam',
-                    '`=antispam action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction anti-spam',
-                    '`=antispam limit <nb>` / `time <sec>`\n┗ Configurer les seuils de spam',
+                    '`=antispam action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Définir la sanction',
+                    '`=antispam limit <nb>` / `time <sec>`\n┗ Seuils anti-spam',
                     '`=antibot on / off`\n┗ Activer / désactiver l\'anti-bot',
-                    '`=antibot action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Sanctionner l\'inviteur du bot'
+                    '`=antibot action <delete|warn|mute|kick|jail|bl|ban>`\n┗ Sanctionner l\'inviteur'
                 ]
             },
             sanctions: {
                 label: 'Sanctions', emoji: '🔨', title: 'Commandes Sanctions',
                 commands: [
                     '`=bl <ID|@mention> [raison]`\n┗ Bannir un utilisateur',
-                    '`=softbl <ID|@mention> [raison]`\n┗ Softban un utilisateur',
-                    '`=unbl <ID>`\n┗ Débannir un utilisateur',
+                    '`=softbl <ID|@mention> [raison]`\n┗ Softban',
+                    '`=unbl <ID>`\n┗ Débannir',
                     '`=blist`\n┗ Liste des bannis',
                     '`=unbanall`\n┗ Tout débannir',
-                    '`=kick <ID|@mention>`\n┗ Expulser un membre',
-                    '`=mute <@membre> <durée> [raison]`\n┗ Rendre muet un membre',
-                    '`=jail <@membre> [raison]` *(ADMIN)*\n┗ Isoler un membre en prison',
-                    '`=unjail <@membre>` *(ADMIN)*\n┗ Libérer un membre',
-                    '`=warn <@membre> [raison]`\n┗ Avertir un membre'
+                    '`=kick <ID|@mention>`\n┗ Expulser',
+                    '`=mute <@membre> <durée> [raison]`\n┗ Mute',
+                    '`=jail <@membre> [raison]` *(ADMIN)*\n┗ Mettre en prison',
+                    '`=unjail <@membre>` *(ADMIN)*\n┗ Libérer de prison',
+                    '`=warn <@membre> [raison]`\n┗ Avertir'
                 ]
             },
             salons: {
                 label: 'Salons', emoji: '🔒', title: 'Salons & Outils',
                 commands: [
-                    '`=lock` / `=unlock` *(ADMIN)*\n┗ Verrouiller/Déverrouiller le salon',
-                    '`=embed <titre> | <description>`\n┗ Créer un embed stylé',
+                    '`=lock` / `=unlock` *(ADMIN)*\n┗ Verrouiller/Déverrouiller',
+                    '`=embed <titre> | <description>`\n┗ Créer un embed',
                     '`=clear <1-50>`\n┗ Supprimer des messages',
-                    '`=purge <ID|@mention>`\n┗ Purger les messages d\'un membre',
-                    '`=snipe`\n┗ Afficher le dernier message supprimé'
+                    '`=purge <ID|@mention>`\n┗ Purger un membre',
+                    '`=snipe`\n┗ Voir le dernier message supprimé'
                 ]
             }
         };
@@ -776,11 +775,11 @@ client.on('messageCreate', async message => {
             const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
             if (!validActs.includes(act)) return message.reply(`❌ Action invalide. Choix : \`${validActs.join(', ')}\``);
             config.antilinkAction = act;
-            return message.reply(`✅ Sanction Anti-Link configurée sur : **${act.toUpperCase()}**`);
+            return message.reply(`✅ Sanction Anti-Link : **${act.toUpperCase()}**`);
         }
         if (sub === 'on' || sub === 'off') {
             config.antilink = (sub === 'on');
-            return message.reply(`🛡️ Protection **Anti-Link** réglée sur **${sub.toUpperCase()}** (Sanction : \`${config.antilinkAction}\`)`);
+            return message.reply(`🛡️ Anti-Link réglé sur **${sub.toUpperCase()}** (Sanction : \`${config.antilinkAction}\`)`);
         }
     }
 
@@ -791,23 +790,23 @@ client.on('messageCreate', async message => {
             const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
             if (!validActs.includes(act)) return message.reply(`❌ Action invalide. Choix : \`${validActs.join(', ')}\``);
             config.antispamAction = act;
-            return message.reply(`✅ Sanction Anti-Spam configurée sur : **${act.toUpperCase()}**`);
+            return message.reply(`✅ Sanction Anti-Spam : **${act.toUpperCase()}**`);
         }
         if (sub === 'limit') {
             const count = parseInt(args[1]);
             if (isNaN(count) || count < 2) return message.reply("❌ Nombre invalide.");
             config.antispamLimit = count;
-            return message.reply(`✅ Limite anti-spam réglée à **${count} messages**.`);
+            return message.reply(`✅ Limite anti-spam : **${count} msgs**.`);
         }
         if (sub === 'time') {
             const ms = parseDuration(args[1]);
             if (!ms) return message.reply("❌ Temps invalide (ex: 5s).");
             config.antispamIntervalMs = ms;
-            return message.reply(`✅ Fenêtre anti-spam réglée à **${args[1]}**.`);
+            return message.reply(`✅ Temps anti-spam : **${args[1]}**.`);
         }
         if (sub === 'on' || sub === 'off') {
             config.antispam = (sub === 'on');
-            return message.reply(`🛡️ Protection **Anti-Spam** réglée sur **${sub.toUpperCase()}** (Sanction : \`${config.antispamAction}\`)`);
+            return message.reply(`🛡️ Anti-Spam réglé sur **${sub.toUpperCase()}** (Sanction : \`${config.antispamAction}\`)`);
         }
     }
 
@@ -818,11 +817,11 @@ client.on('messageCreate', async message => {
             const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
             if (!validActs.includes(act)) return message.reply(`❌ Action invalide. Choix : \`${validActs.join(', ')}\``);
             config.antibotAction = act;
-            return message.reply(`✅ Sanction Anti-Bot configurée sur l'inviteur : **${act.toUpperCase()}**`);
+            return message.reply(`✅ Sanction Anti-Bot (inviteur) : **${act.toUpperCase()}**`);
         }
         if (sub === 'on' || sub === 'off') {
             config.antibot = (sub === 'on');
-            return message.reply(`🛡️ Protection **Anti-Bot** réglée sur **${sub.toUpperCase()}** (Sanction de l'inviteur : \`${config.antibotAction}\`)`);
+            return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}** (Sanction inviteur : \`${config.antibotAction}\`)`);
         }
     }
 
@@ -846,7 +845,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'owner') {
-        if (!isSuperOwner(message)) return message.reply("❌ Tu n'as pas assez de permissions.");
+        if (!isSuperOwner(message)) return message.reply("❌ Permissions insuffisantes.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         botOwners.add(targetUser.id);
@@ -855,36 +854,36 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'admin') {
-        if (!isSuperOwner(message)) return message.reply("❌ Tu n'as pas assez de permissions.");
+        if (!isSuperOwner(message)) return message.reply("❌ Permissions insuffisantes.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         const staff = getStaffRoles(message.guild.id);
         staff.admins.add(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** est désormais **Admin** du bot !`);
+        return message.reply(`🛡️ **${targetUser.tag}** est désormais **Admin** !`);
     }
 
     if (command === 'mod') {
-        if (!isSuperOwner(message) && !isAdmin(message)) return message.reply("❌ Tu n'as pas assez de permissions.");
+        if (!isSuperOwner(message) && !isAdmin(message)) return message.reply("❌ Permissions insuffisantes.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Fournis un ID ou une mention valide.");
         const staff = getStaffRoles(message.guild.id);
         staff.mods.add(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** est désormais **Modérateur** du bot !`);
+        return message.reply(`🛡️ **${targetUser.tag}** est désormais **Modérateur** !`);
     }
-    const userIsAdmin = isAdmin(message);
-    const userIsMod = isMod(message);
-    const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
+    const userIsAdminRole = isAdmin(message);
+    const userIsModRole = isMod(message);
+    const isUserAdminOrOwnerFinal = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
 
     const modCommands = ['clear', 'purge', 'snipe', 'slowmode', 'renew', 'createtext', 'createvoice', 'unmute', 'warn', 'warnings', 'mute'];
     const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'lockall', 'unlockall', 'jail', 'unjail', 'setlog', 'setmuterole', 'setwelcome', 'setticketpanel', 'setticketcat', 'setticketlog', 'settickettitle', 'setticketdesc', 'setticketimage', 'ticketadd', 'gcreate', 'gend', 'greroll', 'glist', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
 
     if (modCommands.includes(command)) {
-        if (!userIsMod && !isUserAdminOrOwner) return message.reply("❌ Tu n'as pas assez de permissions (Réservé au Staff).");
+        if (!userIsModRole && !isUserAdminOrOwnerFinal) return message.reply("❌ Réservé au Staff.");
     }
 
     if (adminCommands.includes(command)) {
-        if (!userIsAdmin && !isUserOwner && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Tu n'as pas assez de permissions (Réservé aux Administrateurs).");
+        if (!userIsAdminRole && !isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+            return message.reply("❌ Réservé aux Administrateurs.");
         }
     }
 
@@ -910,7 +909,7 @@ client.on('messageCreate', async message => {
 
             await jailChannel.send({ content: `<@${targetMember.id}>`, embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🔒 PRISON').setDescription(`Raison : ${reason}`)] });
             sendLog(message.guild, new EmbedBuilder().setColor('#e74c3c').setTitle('🔒 Jail').setDescription(`**Admin :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}\n**Salon :** ${jailChannel}`).setTimestamp());
-            return message.reply(`🔒 Membre envoyé en jail par un administrateur : ${jailChannel}`);
+            return message.reply(`🔒 Membre envoyé en jail : ${jailChannel}`);
         } catch (e) { return message.reply("❌ Erreur jail."); }
     }
 
@@ -927,7 +926,7 @@ client.on('messageCreate', async message => {
             const jailChan = message.guild.channels.cache.find(c => c.name === `jail-${targetMember.user.username.toLowerCase()}`);
             if (jailChan) await jailChan.delete().catch(() => {});
             sendLog(message.guild, new EmbedBuilder().setColor('#2ecc71').setTitle('🔓 Unjail').setDescription(`**Admin :** ${message.author.tag}\n**Membre :** ${targetMember.user.tag}`).setTimestamp());
-            return message.reply(`🔓 **${targetMember.user.tag}** libéré de la prison.`);
+            return message.reply(`🔓 **${targetMember.user.tag}** libéré de prison.`);
         } catch (e) { return message.reply("❌ Erreur unjail."); }
     }
 
@@ -982,7 +981,7 @@ client.on('messageCreate', async message => {
     if (command === 'setlog') {
         const channel = message.mentions.channels.first() || message.channel;
         config.logChannel = channel.id;
-        return message.reply(`✅ Salon de logs globaux défini sur ${channel} !`);
+        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
     }
 
     if (command === 'setwelcome') {
