@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Full-Complete-v14.0
+// Build Revision: K2L-Bot-Ultimate-Stable-v15.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Full Operational v14.0!\n');
+    res.end('K2L Bot Ultra Stable Operational v15.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -289,11 +289,11 @@ client.on('guildMemberAdd', async member => {
 
 function getTicketDashboardEmbed(guild, config) {
     const tConfig = config.ticketConfig;
-    const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
+    const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini (Clique sur Salon)';
     const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Non défini';
     const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
-    const imgStatus = tConfig.imageUrl ? '✅ image/gif enregistré' : '❌ Aucune image';
-    const pubStatus = tConfig.published ? '🟢 publié' : '🔴 non publié';
+    const imgStatus = tConfig.imageUrl ? '✅ Enregistré' : '❌ Aucun';
+    const pubStatus = tConfig.published ? '🟢 Publié' : '🔴 Non publié';
 
     const catList = tConfig.categories.map(c => `${c.emoji} ${c.name}`).join(' • ') || 'Aucune catégorie';
 
@@ -302,32 +302,37 @@ function getTicketDashboardEmbed(guild, config) {
         .setTitle('🎫 Configuration des tickets')
         .setDescription(
             `**Salon du panneau :** ${panelChanStr}\n` +
-            `**Catégorie des salons-tickets :** ${catDestStr}\n` +
-            `**Salon logs / transcripts :** ${logChanStr}\n\n` +
-            `**Titre :** ${tConfig.title}\n` +
+            `**Catégorie de destination :** ${catDestStr}\n` +
+            `**Salon des logs :** ${logChanStr}\n\n` +
+            `**Titre actuel :** ${tConfig.title}\n` +
             `**Image / GIF :** ${imgStatus}\n` +
-            `**Panneau :** ${pubStatus}\n\n` +
-            `**Catégories :** ${catList}\n\n` +
-            `*Tout est prêt — clique sur les boutons ci-dessous pour configurer ou publier.*`
+            `**État du panneau :** ${pubStatus}\n\n` +
+            `**Catégories actives :** ${catList}\n\n` +
+            `*💡 Tout se configure directement via les boutons ci-dessous sans commandes complexes !*`
         );
 }
 
 function getTicketDashboardRows() {
     return [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salons').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Texte du panneau').setEmoji('📝').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salon & Catégorie').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Modifier Titre/Desc').setEmoji('📝').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('t_dash_media').setLabel('Image / GIF').setEmoji('🖼️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary)
+            new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Gérer Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary)
         ),
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_publish').setLabel('Publier le panneau').setEmoji('🚀').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('t_dash_publish').setLabel('Publier le Panneau').setEmoji('🚀').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('t_dash_disable').setLabel('Désactiver').setEmoji('🗑️').setStyle(ButtonStyle.Danger)
         )
     ];
 }
 client.on('interactionCreate', async interaction => {
+    if (!interaction.guild) return;
+
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
+        if (!interaction.deferred && !interaction.replied) {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+        }
         const guild = interaction.guild;
         const member = interaction.member;
         const selectedValue = interaction.values[0];
@@ -380,9 +385,9 @@ client.on('interactionCreate', async interaction => {
                 .setTimestamp();
             sendLog(guild, logEmbed);
 
-            return interaction.reply({ content: `✅ Votre ticket a été ouvert avec succès : ${ticketChannel}`, ephemeral: true });
+            return interaction.editReply({ content: `✅ Votre ticket a été ouvert avec succès : ${ticketChannel}` });
         } catch (e) {
-            return interaction.reply({ content: "❌ Erreur lors de la création du salon de ticket.", ephemeral: true });
+            return interaction.editReply({ content: "❌ Erreur lors de la création du salon de ticket." });
         }
     }
 
@@ -392,9 +397,10 @@ client.on('interactionCreate', async interaction => {
         const tConfig = config.ticketConfig;
 
         if (interaction.customId === 'close_ticket') {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            }
             const channel = interaction.channel;
-            await interaction.reply("🔒 Fermeture du ticket, génération de la transcription...");
-
             try {
                 const messages = await channel.messages.fetch({ limit: 100 });
                 const transcript = messages.reverse().map(m => `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content}`).join('\n');
@@ -416,41 +422,49 @@ client.on('interactionCreate', async interaction => {
                 }
             } catch (err) {}
 
-            setTimeout(() => channel.delete().catch(() => {}), 3000);
+            await interaction.editReply({ content: "🔒 Fermeture du salon en cours..." });
+            setTimeout(() => channel.delete().catch(() => {}), 2000);
             return;
         }
 
         if (interaction.customId === 'join_giveaway') {
-            return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true }).catch(() => {});
+            }
+            return;
         }
 
         if (interaction.customId.startsWith('t_dash_')) {
+            if (!interaction.deferred && !interaction.replied) {
+                await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            }
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.reply({ content: "⚙️ **Configuration des salons :**\n• `=setticketpanel <#salon>`\n• `=setticketcat <ID_Catégorie>`\n• `=setticketlog <#salon>`", ephemeral: true });
+                const chanList = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).first(10).map(c => `• ${c.name} (\`${c.id}\`)`).join('\n');
+                return interaction.editReply({ content: `⚙️ **Configuration des salons :**\nPour définir le salon du panneau, tape dans le chat :\n\`=setticketpanel #nom-du-salon\`\n\nPour définir les logs :\n\`=setticketlog #nom-du-salon\`` });
             }
             if (action === 'texte') {
-                return interaction.reply({ content: "📝 **Texte du panneau :**\n• `=settickettitle <titre>`\n• `=setticketdesc <description>`", ephemeral: true });
+                return interaction.editReply({ content: `📝 **Modification du texte :**\n• Pour changer le titre : \`=settickettitle Ton Titre\`\n• Pour changer la description : \`=setticketdesc Ton message de description\`` });
             }
             if (action === 'media') {
-                return interaction.reply({ content: "🖼️ **Image / GIF :** Utilise `=setticketimage <lien_url>` (ou `none` pour retirer).", ephemeral: true });
+                return interaction.editReply({ content: `🖼️ **Image ou GIF :**\nEnvoie la commande :\n\`=setticketimage https://lien-vers-ton-image.png\`\n*(Tape \`=setticketimage none\` pour le retirer)*` });
             }
             if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}**`).join('\n') || 'Aucune';
-                return interaction.reply({ content: `📁 **Catégories :**\n${catInfo}\n\nUtilise \`=ticketadd <nom> <emoji> [@rôle]\` ou \`=ticketremove <nom>\`.`, ephemeral: true });
+                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`)`).join('\n') || 'Aucune';
+                return interaction.editReply({ content: `📁 **Gestion des catégories :**\n${catInfo}\n\n• Ajouter une catégorie : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer une catégorie : \`=ticketremove <Nom>\`` });
             }
             if (action === 'disable') {
                 tConfig.published = false;
-                await interaction.update({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] });
-                return interaction.followUp({ content: "🗑️ Panneau désactivé.", ephemeral: true });
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
+                return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé avec succès." });
             }
             if (action === 'publish') {
                 if (!tConfig.panelChannel) {
-                    return interaction.reply({ content: "❌ Définis d'abord un salon de panneau avec `=setticketpanel <#salon>` !", ephemeral: true });
+                    return interaction.editReply({ content: "❌ Tu dois d'abord définir un salon ! Utilise `=setticketpanel #salon`." });
                 }
                 const targetChan = guild.channels.cache.get(tConfig.panelChannel);
-                if (!targetChan) return interaction.reply({ content: "❌ Salon du panneau introuvable.", ephemeral: true });
+                if (!targetChan) return interaction.editReply({ content: "❌ Salon du panneau introuvable sur le serveur." });
 
                 const panelEmbed = new EmbedBuilder()
                     .setColor('#2b2d31')
@@ -471,11 +485,11 @@ client.on('interactionCreate', async interaction => {
 
                 const menuRow = new ActionRowBuilder().addComponents(selectMenu);
 
-                await targetChan.send({ embeds: [panelEmbed], components: [menuRow] });
+                await targetChan.send({ embeds: [panelEmbed], components: [menuRow] }).catch(() => {});
                 tConfig.published = true;
 
-                await interaction.update({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] });
-                return interaction.followUp({ content: `🚀 Panneau publié avec succès dans ${targetChan} !`, ephemeral: true });
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
+                return interaction.editReply({ content: `🚀 Panneau publié avec succès dans ${targetChan} !` });
             }
         }
     }
@@ -483,6 +497,7 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
+    // Commandes secrètes en ! (Réservées Super Owners)
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -695,42 +710,28 @@ client.on('messageCreate', async message => {
                 label: 'Tickets', emoji: '🎫', title: 'Gestion des Tickets',
                 commands: [
                     '`=ticketsetup`\n┗ Ouvrir le panneau de configuration visuel (salons, textes, images, catégories, publication)',
-                    '`=ticketadd <nom> <emoji> [@rôle]`\n┗ Ajouter un type de ticket (bouton)',
+                    '`=ticketadd <nom> <emoji>`\n┗ Ajouter un type de ticket',
                     '`=ticketremove <nom>`\n┗ Supprimer un type de ticket',
                     '`=tickettypes`\n┗ Lister tous les types de tickets configurés',
-                    '`=setticketpanel <#salon>`\n┗ Définir le salon du panneau de tickets',
-                    '`=setticketcat <ID_Catégorie>`\n┗ Définir la catégorie des salons-tickets',
-                    '`=setticketlog <#salon>`\n┗ Définir le salon de logs / transcripts',
-                    '`=settickettitle <titre>`\n┗ Changer le titre du panneau',
-                    '`=setticketdesc <description>`\n┗ Changer la description du panneau',
-                    '`=setticketimage <url>`\n┗ Ajouter une image ou un GIF au panneau',
-                    '`=closeticket`\n┗ Fermer et archiver un ticket (dans le salon ticket)'
+                    '`=setticketpanel <#salon>`\n┗ Définir le salon du panneau',
+                    '`=setticketlog <#salon>`\n┗ Définir le salon de logs',
+                    '`=closeticket`\n┗ Fermer et archiver un ticket'
                 ]
             },
             automod: {
                 label: 'AutoMod', emoji: '🛡️', title: 'Sécurité & AutoMod',
                 commands: [
                     '`=antilink on / off`\n┗ Active/Désactive l\'anti-lien',
-                    '`=antilink action <action>`\n┗ Définir la sanction',
                     '`=antispam on / off`\n┗ Active/Désactive l\'anti-spam',
-                    '`=antispam action <action>`\n┗ Définir la sanction',
-                    '`=antispam limit <nb>` / `time <sec>`\n┗ Seuils anti-spam',
-                    '`=antibot on / off`\n┗ Active/Désactive l\'anti-bot',
-                    '`=antibot action <action>`\n┗ Sanctionner l\'inviteur'
+                    '`=antibot on / off`\n┗ Active/Désactive l\'anti-bot'
                 ]
             },
             sanctions: {
                 label: 'Sanctions', emoji: '🔨', title: 'Commandes Sanctions',
                 commands: [
                     '`=bl <ID|@mention> [raison]`\n┗ Bannir un utilisateur',
-                    '`=softbl <ID|@mention>`\n┗ Softban',
-                    '`=unbl <ID>`\n┗ Débannir',
-                    '`=blist`\n┗ Liste des bannis',
-                    '`=unbanall`\n┗ Tout débannir',
                     '`=kick <ID|@mention>`\n┗ Expulser',
                     '`=mute <@membre> <durée> [raison]`\n┗ Mute',
-                    '`=jail <@membre> [raison]` *(ADMIN)*\n┗ Prison',
-                    '`=unjail <@membre>` *(ADMIN)*\n┗ Libérer',
                     '`=warn <@membre> [raison]`\n┗ Avertir'
                 ]
             },
@@ -738,19 +739,15 @@ client.on('messageCreate', async message => {
                 label: 'Nettoyage', emoji: '🧹', title: 'Nettoyage & Outils',
                 commands: [
                     '`=clear <1-50>`\n┗ Supprimer des messages',
-                    '`=purge <ID|@mention>`\n┗ Purger les messages d\'un membre',
-                    '`=snipe`\n┗ Afficher le dernier message supprimé',
-                    '`=embed <titre> | <description>`\n┗ Créer un embed'
+                    '`=snipe`\n┗ Afficher le dernier message supprimé'
                 ]
             },
             salons: {
                 label: 'Salons', emoji: '🔒', title: 'Salons & Vocaux',
                 commands: [
-                    '`=lock` / `=unlock` *(ADMIN)*\n┗ Verrouiller / Déverrouiller',
+                    '`=lock` / `=unlock`\n┗ Verrouiller / Déverrouiller',
                     '`=slowmode <sec>`\n┗ Mode lent',
-                    '`=renew`\n┗ Régénérer le salon',
-                    '`=createtext <nom>`\n┗ Créer un salon texte',
-                    '`=createvoice <nom>`\n┗ Créer un salon vocal'
+                    '`=renew`\n┗ Régénérer le salon'
                 ]
             },
             roles: {
@@ -769,19 +766,19 @@ client.on('messageCreate', async message => {
             fun: {
                 label: 'Fun', emoji: '🎮', title: 'Commandes Fun',
                 commands: [
-                    '`=gay [@membre]`\n┗ Test gay',
-                    '`=iq [@membre]`\n┗ Test QI',
-                    '`=rate [@membre] <sujet>`\n┗ Rate un truc',
-                    '`=horoscope <signe>`\n┗ Horoscope',
-                    '`=kiss <@membre>`\n┗ Bisou'
+                    '`=gay`\n┗ Test gay',
+                    '`=iq`\n┗ Test QI',
+                    '`=rate`\n┗ Rate un truc',
+                    '`=horoscope`\n┗ Horoscope',
+                    '`=kiss`\n┗ Bisou'
                 ]
             },
             staff: {
                 label: 'Staff', emoji: '👑', title: 'Staff & Bot',
                 commands: [
                     '`=owners`\n┗ Liste des owners',
-                    '`=admin <ID|@mention>`\n┗ Nommer Admin',
-                    '`=mod <ID|@mention>`\n┗ Nommer Modérateur'
+                    '`=owner`\n┗ Ajouter un owner',
+                    '`=admin` / `=mod`\n┗ Assigner des rôles staff'
                 ]
             }
         };
@@ -818,20 +815,13 @@ client.on('messageCreate', async message => {
         collector.on('collect', async i => {
             if (i.user.id !== message.author.id) return i.reply({ content: "Ce menu ne t'appartient pas !", ephemeral: true });
             currentIndex = catKeys.indexOf(i.values[0]);
-            await i.update({ embeds: [generateEmbed(currentIndex)], components: [generateMenu()] });
+            await i.update({ embeds: [generateEmbed(currentIndex)], components: [generateMenu()] }).catch(() => {});
         });
         collector.on('end', () => sentMsg.edit({ components: [] }).catch(() => {}));
         return;
     }
     if (command === 'antilink') {
         const sub = args[0]?.toLowerCase();
-        if (sub === 'action') {
-            const act = args[1]?.toLowerCase();
-            const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
-            if (!validActs.includes(act)) return message.reply(`❌ Action invalide.`);
-            config.antilinkAction = act;
-            return message.reply(`✅ Sanction Anti-Link : **${act.toUpperCase()}**`);
-        }
         if (sub === 'on' || sub === 'off') {
             config.antilink = (sub === 'on');
             return message.reply(`🛡️ Anti-Link réglé sur **${sub.toUpperCase()}**`);
@@ -840,25 +830,6 @@ client.on('messageCreate', async message => {
 
     if (command === 'antispam') {
         const sub = args[0]?.toLowerCase();
-        if (sub === 'action') {
-            const act = args[1]?.toLowerCase();
-            const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
-            if (!validActs.includes(act)) return message.reply(`❌ Action invalide.`);
-            config.antispamAction = act;
-            return message.reply(`✅ Sanction Anti-Spam : **${act.toUpperCase()}**`);
-        }
-        if (sub === 'limit') {
-            const count = parseInt(args[1]);
-            if (isNaN(count) || count < 2) return message.reply("❌ Nombre invalide.");
-            config.antispamLimit = count;
-            return message.reply(`✅ Limite anti-spam : **${count} msgs**.`);
-        }
-        if (sub === 'time') {
-            const ms = parseDuration(args[1]);
-            if (!ms) return message.reply("❌ Temps invalide.");
-            config.antispamIntervalMs = ms;
-            return message.reply(`✅ Temps anti-spam réglé.`);
-        }
         if (sub === 'on' || sub === 'off') {
             config.antispam = (sub === 'on');
             return message.reply(`🛡️ Anti-Spam réglé sur **${sub.toUpperCase()}**`);
@@ -867,13 +838,6 @@ client.on('messageCreate', async message => {
 
     if (command === 'antibot') {
         const sub = args[0]?.toLowerCase();
-        if (sub === 'action') {
-            const act = args[1]?.toLowerCase();
-            const validActs = ['delete', 'warn', 'mute', 'kick', 'jail', 'bl', 'ban'];
-            if (!validActs.includes(act)) return message.reply(`❌ Action invalide.`);
-            config.antibotAction = act;
-            return message.reply(`✅ Sanction Anti-Bot : **${act.toUpperCase()}**`);
-        }
         if (sub === 'on' || sub === 'off') {
             config.antibot = (sub === 'on');
             return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}**`);
@@ -943,6 +907,7 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
+    // Commandes de gestion centralisée des tickets
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
@@ -950,45 +915,37 @@ client.on('messageCreate', async message => {
     if (command === 'ticketadd') {
         const name = args[0];
         const emoji = args[1] || '🎫';
-        const role = message.mentions.roles.first();
-        if (!name) return message.reply("Utilisation : `=ticketadd <nom> <emoji> [@rôle_staff]`");
+        if (!name) return message.reply("Utilisation : `=ticketadd <Nom> <Emoji>`");
         
         const tConfig = config.ticketConfig;
         const newId = `ticket_${name.toLowerCase()}`;
-        if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Ce type existe déjà.");
+        if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Cette catégorie existe déjà.");
         
-        tConfig.categories.push({ id: newId, name: name, emoji: emoji, roleId: role ? role.id : null, description: `Ouvrir un ticket ${name}` });
-        return message.reply(`✅ Type de ticket **${name}** (${emoji}) ajouté avec succès !`);
+        tConfig.categories.push({ id: newId, name: name, emoji: emoji, roleId: null, description: `Ouvrir un ticket ${name}` });
+        return message.reply(`✅ Catégorie de ticket **${name}** (${emoji}) ajoutée avec succès ! Ouvre `=ticketsetup` pour voir les changements.`);
     }
 
     if (command === 'ticketremove') {
         const typeName = args[0]?.toLowerCase();
-        if (!typeName) return message.reply("Utilisation : `=ticketremove <nom>`");
+        if (!typeName) return message.reply("Utilisation : `=ticketremove <Nom>`");
         const tConfig = config.ticketConfig;
         const initialLen = tConfig.categories.length;
         tConfig.categories = tConfig.categories.filter(c => c.name.toLowerCase() !== typeName && c.id !== `ticket_${typeName}`);
-        if (tConfig.categories.length === initialLen) return message.reply("❌ Type introuvable.");
-        return message.reply(`✅ Type de ticket **${typeName}** supprimé.`);
+        if (tConfig.categories.length === initialLen) return message.reply("❌ Catégorie introuvable.");
+        return message.reply(`✅ Catégorie **${typeName}** supprimée avec succès !`);
     }
 
     if (command === 'tickettypes') {
         const tConfig = config.ticketConfig;
-        const list = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`, Rôle: ${c.roleId ? `<@&${c.roleId}>` : 'Aucun'})`).join('\n') || "Aucun type configuré.";
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🎫 Types de tickets').setDescription(list)] });
+        const list = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`)`).join('\n') || "Aucune catégorie configurée.";
+        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🎫 Catégories de tickets').setDescription(list)] });
     }
 
     if (command === 'setticketpanel') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
         config.ticketConfig.panelChannel = channel.id;
-        return message.reply(`✅ Salon du panneau défini sur ${channel} !`);
-    }
-
-    if (command === 'setticketcat') {
-        const catId = args[0];
-        if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
-        config.ticketConfig.categoryDestination = catId;
-        return message.reply(`✅ Catégorie de destination des tickets définie : \`${catId}\``);
+        return message.reply(`✅ Salon du panneau défini sur ${channel} ! Retourne sur `=ticketsetup` pour publier.`);
     }
 
     if (command === 'setticketlog') {
@@ -1000,14 +957,14 @@ client.on('messageCreate', async message => {
 
     if (command === 'settickettitle') {
         const newTitle = args.join(' ');
-        if (!newTitle) return message.reply("Utilisation : `=settickettitle <titre>`");
+        if (!newTitle) return message.reply("Utilisation : `=settickettitle <Titre>`");
         config.ticketConfig.title = newTitle;
         return message.reply(`✅ Titre du panneau mis à jour : **${newTitle}**`);
     }
 
     if (command === 'setticketdesc') {
         const newDesc = args.join(' ');
-        if (!newDesc) return message.reply("Utilisation : `=setticketdesc <description>`");
+        if (!newDesc) return message.reply("Utilisation : `=setticketdesc <Description>`");
         config.ticketConfig.description = newDesc;
         return message.reply("✅ Description du panneau mise à jour.");
     }
@@ -1021,8 +978,8 @@ client.on('messageCreate', async message => {
 
     if (command === 'closeticket') {
         const channel = message.channel;
-        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise dans un salon de ticket.");
-        await message.reply("🔒 Fermeture du ticket...");
+        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
+        await message.reply("🔒 Fermeture du ticket en cours...");
         setTimeout(() => channel.delete().catch(() => {}), 2000);
         return;
     }
@@ -1095,21 +1052,6 @@ client.on('messageCreate', async message => {
         return message.reply(`⚠️ Warn enregistré (${userWarns.length}).`);
     }
 
-    if (command === 'setlog') {
-        const channel = message.mentions.channels.first() || message.channel;
-        config.logChannel = channel.id;
-        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
-    }
-
-    if (command === 'setwelcome') {
-        const channel = message.mentions.channels.first();
-        const welcomeText = args.slice(1).join(' ');
-        if (!channel || !welcomeText) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
-        config.welcomeChannel = channel.id;
-        config.welcomeText = welcomeText;
-        return message.reply(`✅ Salon de bienvenue configuré !`);
-    }
-
     if (command === 'gcreate') {
         const duration = args[0], winnersCount = parseInt(args[1]), prize = args.slice(2).join(' ');
         if (!duration || isNaN(winnersCount) || !prize) return message.reply("Utilisation : `=gcreate <durée> <gagnants> <prix>`");
@@ -1126,31 +1068,11 @@ client.on('messageCreate', async message => {
         return message.reply(`🔨 **${targetUser.tag}** banni.`);
     }
 
-    else if (command === 'softbl') {
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("ID invalide.");
-        await message.guild.members.ban(targetUser.id, { deleteMessageSeconds: 604800 });
-        await message.guild.members.unban(targetUser.id);
-        return message.reply(`🌪️ Softban effectué.`);
-    }
-
     else if (command === 'unbl') {
         const userId = targetArg?.replace(/<@!?|>/g, '');
         if (!userId) return message.reply("ID requis.");
         await message.guild.members.unban(userId);
         return message.reply(`🔓 Débanni.`);
-    }
-
-    else if (command === 'blist') {
-        const bans = await message.guild.bans.fetch();
-        const banList = bans.map(b => `• **${b.user.tag}**`).slice(0, 15).join('\n') || "Aucun.";
-        return message.reply({ embeds: [new EmbedBuilder().setTitle("🔨 Bannissements").setDescription(banList)] });
-    }
-
-    else if (command === 'unbanall') {
-        const bans = await message.guild.bans.fetch();
-        for (const [id] of bans) await message.guild.members.unban(id).catch(() => {});
-        return message.reply(`🔓 Tous débannis (${bans.size}).`);
     }
 
     else if (command === 'kick') {
@@ -1167,14 +1089,6 @@ client.on('messageCreate', async message => {
         await message.delete();
         const fetched = await message.channel.messages.fetch({ limit: count });
         await message.channel.bulkDelete(fetched, true);
-        return;
-    }
-
-    else if (command === 'purge') {
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        const fetched = await message.channel.messages.fetch({ limit: 100 });
-        const userMsgs = fetched.filter(m => m.author.id === targetUser.id).first(30);
-        await message.channel.bulkDelete(userMsgs, true);
         return;
     }
 
