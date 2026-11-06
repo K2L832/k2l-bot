@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-AutoModConfig-v9.0
+// Build Revision: K2L-Bot-Ultimate-Master-v9.5
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational with Fully Configurable AutoMod Sanctions v9.0!\n');
+    res.end('K2L Bot Master Ultimate Operational with All Commands & Configurable AutoMod v9.5!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -75,13 +75,13 @@ function getGuildConfig(guildId) {
     if (!serverConfig.has(guildId)) {
         serverConfig.set(guildId, {
             antilink: false,
-            antilinkAction: 'delete', // delete, warn, mute, kick, jail, bl, ban
+            antilinkAction: 'delete',
             antispam: false,
             antispamAction: 'mute',
             antispamLimit: 5,
             antispamIntervalMs: 5000,
             antibot: false,
-            antibotAction: 'kick', // action sur la personne qui invite le bot
+            antibotAction: 'kick',
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null,
@@ -156,7 +156,7 @@ function parseDuration(durationStr) {
 async function executeAutoSanction(guild, member, action, reason) {
     if (!member || member.user.bot) return;
     try {
-        if (action === 'delete') return; // Juste suppression gérée en amont
+        if (action === 'delete') return;
         if (action === 'warn') {
             let userWarns = warningsMap.get(member.id) || [];
             userWarns.push({ reason, moderator: 'AutoMod' });
@@ -198,7 +198,7 @@ client.on('messageDelete', message => {
     const embed = new EmbedBuilder()
         .setColor('#e74c3c')
         .setTitle('🗑️ Message supprimé')
-        .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Contenu :**\n\`\`\`${message.content || 'Aucun texte (Embed/Image/Fichier)'}\`\`\``)
+        .setDescription(`**Auteur :** ${message.author.tag} (\`${message.author.id}\`)\n**Salon :** <#${message.channel.id}>\n**Contenu :**\n\`\`\`${message.content || 'Aucun texte'}\`\`\``)
         .setTimestamp();
     sendLog(message.guild, embed);
 });
@@ -248,15 +248,14 @@ client.on('roleDelete', role => {
 });
 
 client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt avec AutoMod Sanctions Configurables.`);
+    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt avec Master Suite.`);
 });
 client.on('guildMemberAdd', async member => {
     if (member.user.bot && member.id !== client.user.id) {
         const config = getGuildConfig(member.guild.id);
         if (config.antibot) {
             try {
-                // Recherche de la personne ayant invité le bot
-                const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: 28 }); // Bot Add
+                const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: 28 });
                 const auditLog = fetchedLogs.entries.first();
                 const executor = auditLog ? auditLog.executor : null;
 
@@ -451,7 +450,7 @@ client.on('interactionCreate', async interaction => {
             if (action === 'disable') {
                 tConfig.published = false;
                 await interaction.update({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] });
-                return interaction.reply({ content: "🗑️ Panneau désactivé.", ephemeral: true });
+                return interaction.followUp({ content: "🗑️ Panneau désactivé.", ephemeral: true });
             }
             if (action === 'publish') {
                 if (!tConfig.panelChannel) {
@@ -483,7 +482,7 @@ client.on('interactionCreate', async interaction => {
                 tConfig.published = true;
 
                 await interaction.update({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] });
-                return interaction.reply({ content: `🚀 Panneau publié avec succès dans ${targetChan} !`, ephemeral: true });
+                return interaction.followUp({ content: `🚀 Panneau publié avec succès dans ${targetChan} !`, ephemeral: true });
             }
         }
     }
@@ -491,6 +490,7 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
+    // Commandes secrètes Owner en '!'
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -780,7 +780,7 @@ client.on('messageCreate', async message => {
         }
         if (sub === 'on' || sub === 'off') {
             config.antilink = (sub === 'on');
-            return message.reply(`🛡️ Protection **Anti-Link** réglée sur **${sub.toUpperCase()}** (Sanction actuelle : \`${config.antilinkAction}\`)`);
+            return message.reply(`🛡️ Protection **Anti-Link** réglée sur **${sub.toUpperCase()}** (Sanction : \`${config.antilinkAction}\`)`);
         }
     }
 
@@ -795,7 +795,7 @@ client.on('messageCreate', async message => {
         }
         if (sub === 'limit') {
             const count = parseInt(args[1]);
-            if (isNaN(count) || count < 2) return message.reply("❌ Nombre de messages invalide.");
+            if (isNaN(count) || count < 2) return message.reply("❌ Nombre invalide.");
             config.antispamLimit = count;
             return message.reply(`✅ Limite anti-spam réglée à **${count} messages**.`);
         }
@@ -803,11 +803,11 @@ client.on('messageCreate', async message => {
             const ms = parseDuration(args[1]);
             if (!ms) return message.reply("❌ Temps invalide (ex: 5s).");
             config.antispamIntervalMs = ms;
-            return message.reply(`✅ Fenêtre de temps anti-spam réglée à **${args[1]}**.`);
+            return message.reply(`✅ Fenêtre anti-spam réglée à **${args[1]}**.`);
         }
         if (sub === 'on' || sub === 'off') {
             config.antispam = (sub === 'on');
-            return message.reply(`🛡️ Protection **Anti-Spam** réglée sur **${sub.toUpperCase()}** (Sanction : \`${config.antispamAction}\`, ${config.antispamLimit} msg / ${config.antispamIntervalMs/1000}s)`);
+            return message.reply(`🛡️ Protection **Anti-Spam** réglée sur **${sub.toUpperCase()}** (Sanction : \`${config.antispamAction}\`)`);
         }
     }
 
@@ -875,9 +875,7 @@ client.on('messageCreate', async message => {
     const userIsMod = isMod(message);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
 
-    // Commandes modération classique (sans lock, sans jail)
     const modCommands = ['clear', 'purge', 'snipe', 'slowmode', 'renew', 'createtext', 'createvoice', 'unmute', 'warn', 'warnings', 'mute'];
-    // Commandes administration (lock, jail réservés aux admins/owners)
     const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'lockall', 'unlockall', 'jail', 'unjail', 'setlog', 'setmuterole', 'setwelcome', 'setticketpanel', 'setticketcat', 'setticketlog', 'settickettitle', 'setticketdesc', 'setticketimage', 'ticketadd', 'gcreate', 'gend', 'greroll', 'glist', 'ticketsetup', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
 
     if (modCommands.includes(command)) {
