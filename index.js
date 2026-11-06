@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Dashboard-Tickets-v7.0
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+// Build Revision: K2L-Bot-Ultimate-Dashboard-Tickets-v7.1
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational with Interactive Ticket Dashboard v7.0!\n');
+    res.end('K2L Bot Ultra Operational with Interactive Ticket Dashboard v7.1!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -26,7 +26,6 @@ const serverConfig = new Map();
 const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
-const ticketDashboards = new Map(); // Stocke l'état du panneau de configuration par serveur
 
 const SUPER_OWNERS = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
 const botOwners = new Set(["77jc", "1166445202148442112", "330080470983245824"]); 
@@ -403,7 +402,6 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true });
         }
 
-        // Dashboard buttons
         if (interaction.customId.startsWith('t_dash_')) {
             if (!isAdmin({ member: interaction.member, author: interaction.user, guild: interaction.guild })) {
                 return interaction.reply({ content: "❌ Tu n'as pas les permissions admin pour configurer le panneau.", ephemeral: true });
@@ -1027,7 +1025,6 @@ client.on('messageCreate', async message => {
         return message.reply("🔓 Tous les salons déverrouillés !");
     }
 
-    // --- COMMANDES DE CONFIGURATION DES TICKETS (DASHBOARD) ---
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
@@ -1231,7 +1228,7 @@ client.on('messageCreate', async message => {
     else if (command === 'unlock') {
         try {
             await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-            sendLog(message.guild, new EmbedBuilder().setColor('#2ecc71').setTitle('🔓 Salon déverrouillé').setDescription(`Par ${message.author.tag} dans <#${message.channel.id}>`).setTimestamp());
+            sendLog(message.guild, new EmbedBuilder().setColor('#e74c3c').setTitle('🔓 Salon déverrouillé').setDescription(`Par ${message.author.tag} dans <#${message.channel.id}>`).setTimestamp());
             return message.reply("🔓 Salon déverrouillé.");
         } catch (e) { return message.reply("❌ Erreur."); }
     }
