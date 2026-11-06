@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Stable-v15.0
+// Build Revision: K2L-Bot-Ultimate-Stable-v15.1
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Stable Operational v15.0!\n');
+    res.end('K2L Bot Ultra Stable Operational v15.1!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -441,7 +441,6 @@ client.on('interactionCreate', async interaction => {
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                const chanList = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).first(10).map(c => `• ${c.name} (\`${c.id}\`)`).join('\n');
                 return interaction.editReply({ content: `⚙️ **Configuration des salons :**\nPour définir le salon du panneau, tape dans le chat :\n\`=setticketpanel #nom-du-salon\`\n\nPour définir les logs :\n\`=setticketlog #nom-du-salon\`` });
             }
             if (action === 'texte') {
@@ -907,7 +906,7 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
-    // Commandes de gestion centralisée des tickets
+    // Commandes de gestion centralisée des tickets (syntaxe sécurisée)
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
@@ -922,7 +921,7 @@ client.on('messageCreate', async message => {
         if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Cette catégorie existe déjà.");
         
         tConfig.categories.push({ id: newId, name: name, emoji: emoji, roleId: null, description: `Ouvrir un ticket ${name}` });
-        return message.reply(`✅ Catégorie de ticket **${name}** (${emoji}) ajoutée avec succès ! Ouvre `=ticketsetup` pour voir les changements.`);
+        return message.reply(`✅ Catégorie de ticket **${name}** (${emoji}) ajoutée avec succès ! Ouvre \`=ticketsetup\` pour voir les changements.`);
     }
 
     if (command === 'ticketremove') {
@@ -945,7 +944,7 @@ client.on('messageCreate', async message => {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
         config.ticketConfig.panelChannel = channel.id;
-        return message.reply(`✅ Salon du panneau défini sur ${channel} ! Retourne sur `=ticketsetup` pour publier.`);
+        return message.reply(`✅ Salon du panneau défini sur ${channel} ! Retourne sur \`=ticketsetup\` pour publier.`);
     }
 
     if (command === 'setticketlog') {
