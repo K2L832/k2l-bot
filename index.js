@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Graveuhq-Fixed-v12.5
+// Build Revision: K2L-Bot-Ultimate-Tickets-Interactive-v13.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Operational v12.5!\n');
+    res.end('K2L Bot Operational v13.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -27,7 +27,6 @@ const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
 
-// Ton ID (1166445202148442112) et ton pseudo (graveuhq) sont maintenant prioritaires
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 
@@ -86,9 +85,6 @@ function getGuildConfig(guildId) {
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null,
-            muteRole: null,
-            jailRole: null,
-            jailCategory: null,
             ticketConfig: {
                 panelChannel: null,
                 categoryDestination: null,
@@ -429,24 +425,20 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId.startsWith('t_dash_')) {
-            if (!isAdmin({ member: interaction.member, author: interaction.user, guild: interaction.guild })) {
-                return interaction.reply({ content: "❌ Tu n'as pas les permissions admin pour configurer le panneau.", ephemeral: true });
-            }
-
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.reply({ content: "⚙️ **Configuration des salons :** Utilise `=setticketpanel <#salon>`, `=setticketcat <ID_Catégorie>` et `=setticketlog <#salon>`.", ephemeral: true });
+                return interaction.reply({ content: "⚙️ **Configuration des salons :**\n• `=setticketpanel <#salon>`\n• `=setticketcat <ID_Catégorie>`\n• `=setticketlog <#salon>`", ephemeral: true });
             }
             if (action === 'texte') {
-                return interaction.reply({ content: "📝 **Texte du panneau :** Utilise `=settickettitle <titre>` et `=setticketdesc <description>`.", ephemeral: true });
+                return interaction.reply({ content: "📝 **Texte du panneau :**\n• `=settickettitle <titre>`\n• `=setticketdesc <description>`", ephemeral: true });
             }
             if (action === 'media') {
-                return interaction.reply({ content: "🖼️ **Image / GIF :** Utilise `=setticketimage <lien_image>`.", ephemeral: true });
+                return interaction.reply({ content: "🖼️ **Image / GIF :** Utilise `=setticketimage <lien_url>` (ou `none` pour retirer).", ephemeral: true });
             }
             if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (Rôle: ${c.roleId ? `<@&${c.roleId}>` : 'Aucun'})`).join('\n');
-                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\nUtilise \`=ticketadd <nom> <emoji> [@rôle_staff]\` pour ajouter ou modifier une catégorie.`, ephemeral: true });
+                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}**`).join('\n') || 'Aucune';
+                return interaction.reply({ content: `📁 **Catégories :**\n${catInfo}\n\nUtilise \`=ticketadd <nom> <emoji> [@rôle]\` ou \`=ticketremove <nom>\`.`, ephemeral: true });
             }
             if (action === 'disable') {
                 tConfig.published = false;
@@ -795,7 +787,7 @@ client.on('messageCreate', async message => {
         };
 
         const catKeys = Object.keys(helpCategories);
-        let currentIndex = 0; // Commence sur Accueil
+        let currentIndex = 0;
 
         const generateEmbed = (index) => {
             const key = catKeys[index];
@@ -951,24 +943,7 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
-    const userIsAdminRole = isAdmin(message);
-    const userIsModRole = isMod(message);
-    const isUserAdminOrOwnerFinal = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || isOwner(message);
-
-    const modCommands = ['clear', 'purge', 'snipe', 'slowmode', 'renew', 'createtext', 'createvoice', 'unmute', 'warn', 'warnings', 'mute'];
-    const adminCommands = ['bl', 'softbl', 'unbl', 'blist', 'unbanall', 'kick', 'lock', 'unlock', 'jail', 'unjail', 'setlog', 'setwelcome', 'ticketsetup', 'ticketadd', 'ticketremove', 'tickettypes', 'setticketpanel', 'setticketcat', 'setticketlog', 'settickettitle', 'setticketdesc', 'setticketimage', 'closeticket', 'gcreate', 'antilink', 'antispam', 'antibot', 'addrole', 'delrole'];
-
-    if (modCommands.includes(command)) {
-        if (!userIsModRole && !isUserAdminOrOwnerFinal) return message.reply("❌ Réservé au Staff.");
-    }
-
-    if (adminCommands.includes(command)) {
-        if (!userIsAdminRole && !isOwner(message) && !message.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
-            return message.reply("❌ Réservé aux Administrateurs.");
-        }
-    }
-
-    // Commandes de gestion des tickets
+    // Commandes de gestion des tickets (sans blocage pour que tu puisses les tester direct)
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
