@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Tickets-Interactive-v13.0
+// Build Revision: K2L-Bot-Full-Complete-v14.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Operational v13.0!\n');
+    res.end('K2L Bot Full Operational v14.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -943,7 +943,6 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
-    // Commandes de gestion des tickets (sans blocage pour que tu puisses les tester direct)
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
