@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Absolute-Final-v16.0
+// Build Revision: K2L-Bot-Clean-Tickets-v17.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Absolute Final Operational v16.0!\n');
+    res.end('K2L Bot Clean Operational v17.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -296,9 +296,7 @@ function getTicketDashboardEmbed(guild, config) {
     const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
     const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Non défini';
     const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
-    const imgStatus = tConfig.imageUrl ? '✅ Enregistré' : '❌ Aucun';
     const pubStatus = tConfig.published ? '🟢 Publié' : '🔴 Non publié';
-
     const catList = tConfig.categories.map(c => `${c.emoji} ${c.name}`).join(' • ') || 'Aucune catégorie';
 
     return new EmbedBuilder()
@@ -308,8 +306,6 @@ function getTicketDashboardEmbed(guild, config) {
             `**Salon du panneau :** ${panelChanStr}\n` +
             `**Catégorie destination :** ${catDestStr}\n` +
             `**Salon des logs :** ${logChanStr}\n\n` +
-            `**Titre :** ${tConfig.title}\n` +
-            `**Image / GIF :** ${imgStatus}\n` +
             `**État du panneau :** ${pubStatus}\n\n` +
             `**Catégories :** ${catList}\n\n` +
             `*💡 Configure tout directement via les boutons ci-dessous !*`
@@ -319,13 +315,9 @@ function getTicketDashboardEmbed(guild, config) {
 function getTicketDashboardRows() {
     return [
         new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salons & Catégorie').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Titre & Description').setEmoji('📝').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_media').setLabel('Image / GIF').setEmoji('🖼️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Gérer Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary)
-        ),
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_publish').setLabel('Publier le Panneau').setEmoji('🚀').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Définir le Salon').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Gérer Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('t_dash_publish').setLabel('Publier').setEmoji('🚀').setStyle(ButtonStyle.Success),
             new ButtonBuilder().setCustomId('t_dash_disable').setLabel('Désactiver').setEmoji('🗑️').setStyle(ButtonStyle.Danger)
         )
     ];
@@ -351,13 +343,6 @@ client.on('interactionCreate', async interaction => {
                 { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
             ];
 
-            if (catObj.roleId) {
-                overwrites.push({
-                    id: catObj.roleId,
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory, PermissionsBitField.Flags.ManageMessages]
-                });
-            }
-
             const channelOptions = {
                 name: `${catObj.name.toLowerCase()}-${member.user.username}`,
                 type: ChannelType.GuildText,
@@ -379,8 +364,7 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Fermer le ticket').setStyle(ButtonStyle.Danger)
             );
 
-            const rolePing = catObj.roleId ? `<@&${catObj.roleId}>` : `<@${member.id}>`;
-            await ticketChannel.send({ content: rolePing, embeds: [embed], components: [closeRow] });
+            await ticketChannel.send({ content: `<@${member.id}>`, embeds: [embed], components: [closeRow] });
 
             const logEmbed = new EmbedBuilder()
                 .setColor('#3498db')
@@ -445,17 +429,11 @@ client.on('interactionCreate', async interaction => {
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.editReply({ content: `⚙️ **Configuration des salons :**\n• Définir le panneau : \`=setticketpanel #salon\`\n• Définir la catégorie parente : \`=setticketcat <ID_Catégorie>\`\n• Définir les logs : \`=setticketlog #salon\`` });
-            }
-            if (action === 'texte') {
-                return interaction.editReply({ content: `📝 **Textes du panneau :**\n• Titre : \`=settickettitle Ton Titre\`\n• Description : \`=setticketdesc Ton message\`` });
-            }
-            if (action === 'media') {
-                return interaction.editReply({ content: `🖼️ **Image ou GIF :**\n• Définir : \`=setticketimage https://lien.png\`\n• Retirer : \`=setticketimage none\`` });
+                return interaction.editReply({ content: `⚙️ **Configuration rapide :**\n• Définir le salon du panneau : \`=setticketpanel #salon\`\n• Définir les logs : \`=setticketlog #salon\`` });
             }
             if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`)`).join('\n') || 'Aucune';
-                return interaction.editReply({ content: `📁 **Catégories :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer : \`=ticketremove <Nom>\`` });
+                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}**`).join('\n') || 'Aucune';
+                return interaction.editReply({ content: `📁 **Catégories actives :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer : \`=ticketremove <Nom>\`` });
             }
             if (action === 'disable') {
                 tConfig.published = false;
@@ -467,14 +445,12 @@ client.on('interactionCreate', async interaction => {
                     return interaction.editReply({ content: "❌ Définis d'abord un salon avec `=setticketpanel #salon` !" });
                 }
                 const targetChan = guild.channels.cache.get(tConfig.panelChannel);
-                if (!targetChan) return interaction.editReply({ content: "❌ Salon du panneau introuvable." });
+                if (!targetChan) return interaction.editReply({ content: "❌ Salon introuvable." });
 
                 const panelEmbed = new EmbedBuilder()
                     .setColor('#2b2d31')
                     .setTitle(tConfig.title)
                     .setDescription(tConfig.description);
-
-                if (tConfig.imageUrl) panelEmbed.setImage(tConfig.imageUrl);
 
                 const selectMenu = new StringSelectMenuBuilder()
                     .setCustomId('ticket_select_menu')
@@ -710,18 +686,11 @@ client.on('messageCreate', async message => {
                 ]
             },
             tickets: {
-                label: 'Tickets', emoji: '🎫', title: 'Gestion des Tickets',
+                label: 'Tickets', emoji: '🎫', title: 'Gestion des Tickets (Épurée)',
                 commands: [
                     '`=ticketsetup`\n┗ Panneau visuel interactif',
                     '`=ticketadd <nom> <emoji>`\n┗ Ajouter un type de ticket',
                     '`=ticketremove <nom>`\n┗ Supprimer un type de ticket',
-                    '`=tickettypes`\n┗ Lister les types de tickets',
-                    '`=setticketpanel <#salon>`\n┗ Définir le salon du panneau',
-                    '`=setticketcat <ID_Catégorie>`\n┗ Définir la catégorie parente',
-                    '`=setticketlog <#salon>`\n┗ Définir le salon de logs',
-                    '`=settickettitle <titre>`\n┗ Changer le titre',
-                    '`=setticketdesc <desc>`\n┗ Changer la description',
-                    '`=setticketimage <url>`\n┗ Ajouter une image / GIF',
                     '`=closeticket`\n┗ Fermer et archiver le ticket'
                 ]
             },
@@ -927,7 +896,7 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.add(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
     }
-    // Commandes de gestion centralisée des tickets
+    // Commandes essentielles et épurées pour les tickets
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
@@ -955,12 +924,6 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Catégorie **${typeName}** supprimée avec succès !`);
     }
 
-    if (command === 'tickettypes') {
-        const tConfig = config.ticketConfig;
-        const list = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** (ID: \`${c.id}\`)`).join('\n') || "Aucune catégorie configurée.";
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🎫 Catégories de tickets').setDescription(list)] });
-    }
-
     if (command === 'setticketpanel') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
@@ -968,39 +931,11 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Salon du panneau défini sur ${channel} ! Retourne sur \`=ticketsetup\` pour publier.`);
     }
 
-    if (command === 'setticketcat') {
-        const catId = args[0];
-        if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
-        config.ticketConfig.categoryDestination = catId;
-        return message.reply(`✅ Catégorie de destination des tickets définie : \`${catId}\``);
-    }
-
     if (command === 'setticketlog') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketlog <#salon>`");
         config.ticketConfig.logChannel = channel.id;
         return message.reply(`✅ Salon de logs des tickets défini sur ${channel} !`);
-    }
-
-    if (command === 'settickettitle') {
-        const newTitle = args.join(' ');
-        if (!newTitle) return message.reply("Utilisation : `=settickettitle <Titre>`");
-        config.ticketConfig.title = newTitle;
-        return message.reply(`✅ Titre du panneau mis à jour : **${newTitle}**`);
-    }
-
-    if (command === 'setticketdesc') {
-        const newDesc = args.join(' ');
-        if (!newDesc) return message.reply("Utilisation : `=setticketdesc <Description>`");
-        config.ticketConfig.description = newDesc;
-        return message.reply("✅ Description du panneau mise à jour.");
-    }
-
-    if (command === 'setticketimage') {
-        const url = args[0];
-        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");
-        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
-        return message.reply("✅ Image / GIF du panneau mis à jour.");
     }
 
     if (command === 'closeticket') {
@@ -1155,7 +1090,8 @@ client.on('messageCreate', async message => {
     }
 
     else if (command === 'purge') {
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        const targetUser = await fetchTargetMember(message, targetArg);
+        if (!targetUser) return message.reply("Membre introuvable.");
         const fetched = await message.channel.messages.fetch({ limit: 100 });
         const userMsgs = fetched.filter(m => m.author.id === targetUser.id).first(30);
         await message.channel.bulkDelete(userMsgs, true);
