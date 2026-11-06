@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-FullLogs-Tickets-v6.0
+// Build Revision: K2L-Bot-Ultimate-Fixed-v6.1
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Operational with Full Logs & Custom Tickets v6.0!\n');
+    res.end('K2L Bot Ultra Operational with Full Logs & Custom Tickets v6.1!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -161,7 +161,7 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#f39c12')
         .setTitle('✏️ Message modifié')
-        .setDescription(`**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content \vert{}\vert{} 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
+        .setDescription(`**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n**Salon :** <#${oldMessage.channel.id}>\n**Avant :** \`${oldMessage.content || 'N/A'}\`\n**Après :** \`${newMessage.content || 'N/A'}\``)
         .setTimestamp();
     sendLog(oldMessage.guild, embed);
 });
@@ -303,7 +303,6 @@ client.on('interactionCreate', async interaction => {
             const rolePing = config.ticketRole ? `<@&${config.ticketRole}>` : `<@${member.id}>`;
             await ticketChannel.send({ content: rolePing, embeds: [embed], components: [closeRow] });
 
-            // Log ouverture ticket
             const logEmbed = new EmbedBuilder()
                 .setColor('#3498db')
                 .setTitle('🎫 Ticket ouvert')
@@ -357,7 +356,6 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (message.author.bot || !message.guild) return;
 
-    // Commandes secrètes en '!' réservées aux Super Owners (totalement silencieuses pour les autres)
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -503,7 +501,6 @@ client.on('messageCreate', async message => {
     const userIsMod = isMod(message);
     const isUserAdminOrOwner = message.member.permissions.has(PermissionsBitField.Flags.Administrator) || userIsOwner;
 
-    // --- AUTOMOD & FULL LOGS ---
     if (config.antilink && !isUserAdminOrOwner) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
         if (linkRegex.test(message.content)) {
