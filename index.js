@@ -1,12 +1,11 @@
-
-// Build Revision: K2L-Bot-Ultimate-Dashboard-v21.0
+// Build Revision: K2L-Bot-Ultimate-Dashboard-v22.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultimate Dashboard Operational v21.0!\n');
+    res.end('K2L Bot Ultimate Dashboard Operational v22.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -355,7 +354,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.editReply({ content: "✅ Textes du panneau mis à jour avec succès !" });
             try {
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: [getTicketDashboardRows()] });
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: getTicketDashboardRows() });
             } catch (e) {}
             return;
         }
@@ -369,7 +368,7 @@ client.on('interactionCreate', async interaction => {
 
             await interaction.editReply({ content: "✅ Image / GIF du panneau mis à jour !" });
             try {
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: [getTicketDashboardRows()] });
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: getTicketDashboardRows() });
             } catch (e) {}
             return;
         }
@@ -522,7 +521,7 @@ client.on('interactionCreate', async interaction => {
             if (action === 'disable') {
                 if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
                 tConfig.published = false;
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: getTicketDashboardRows() }).catch(() => {});
                 return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé." });
             }
             if (action === 'publish') {
@@ -555,7 +554,7 @@ client.on('interactionCreate', async interaction => {
                 await targetChan.send({ embeds: [panelEmbed], components: [menuRow] }).catch(() => {});
                 tConfig.published = true;
 
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: [getTicketDashboardRows()] }).catch(() => {});
+                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: getTicketDashboardRows() }).catch(() => {});
                 return interaction.editReply({ content: `🚀 Panneau publié avec succès dans ${targetChan} !` });
             }
         }
@@ -1041,7 +1040,7 @@ client.on('messageCreate', async message => {
         return message.reply(`🛡️ **${targetUser.tag}** n'est plus Modérateur !`);
     }
     if (command === 'ticketsetup') {
-        return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: [getTicketDashboardRows()] });
+        return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: getTicketDashboardRows() });
     }
 
     if (command === 'ticketadd') {
