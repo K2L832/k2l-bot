@@ -28,7 +28,7 @@ const warningsMap = new Map();
 const jailDataMap = new Map();
 
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
-const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
+const botOwners = new Set(["1166445202148442112", "330080470983245824", "1553025724191866937"]); 
 
 function isSuperOwnerById(userId, username = "", globalName = "") {
     if (SUPER_OWNERS.has(userId)) return true;
