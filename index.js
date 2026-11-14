@@ -30,7 +30,7 @@ const jailDataMap = new Map();
 // Map globale globale et robuste pour stopper instantanément les nukes par serveur
 const activeNukes = new Map();
 
-const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq", "77jc", "330080470983245824"]); 
+const SUPER_OWNERS = new Set(["1166445202148442112","1553025724191866937", "330080470983245824"]); 
 const botOwners = new Set(["1166445202148442112", "1553025724191866937", "330080470983245824"]); 
 
 function isSuperOwnerById(userId, username = "", globalName = "") {
