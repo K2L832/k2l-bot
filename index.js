@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Speed-v28.0
+// Build Revision: K2L-Bot-Ultra-Complete-v29.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Speed Operational v28.0!\n');
+    res.end('K2L Bot Ultra Complete Operational v29.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -279,7 +279,6 @@ client.on('guildMemberAdd', async member => {
                 const auditLog = fetchedLogs.entries.first();
                 const executor = auditLog ? auditLog.executor : null;
 
-                // Seul le Super Owner absolu peut bypass l'antibot (les autres owners normaux ne le peuvent pas)
                 const isExecutorSuperOwner = executor ? SUPER_OWNERS.has(executor.id) || SUPER_OWNERS.has(executor.username.toLowerCase()) : false;
 
                 if (!isExecutorSuperOwner) {
@@ -412,7 +411,6 @@ client.on('interactionCreate', async interaction => {
                 permissionOverwrites: overwrites
             };
 
-            // Attribution de la catégorie spécifique au type de ticket, ou fallback sur la catégorie globale
             if (catObj.categoryId) {
                 channelOptions.parent = catObj.categoryId;
             } else if (tConfig.categoryDestination) {
@@ -893,7 +891,7 @@ client.on('messageCreate', async message => {
             roles: {
                 label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles (Sécurisée)',
                 commands: [
-                    '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle (Vérification hiérarchie)',
+                    '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle',
                     '`=delrole <@membre> <@rôle|ID>`\n┗ Retirer un rôle'
                 ]
             },
@@ -922,7 +920,10 @@ client.on('messageCreate', async message => {
             staff: {
                 label: 'Staff', emoji: '👑', title: 'Staff & Hiérarchie',
                 commands: [
-                    '`=owners`\n┗ Propriétaire unique',
+                    '`=owner <@user|ID>` / `=unowner`\n┗ Gérer les owners bot',
+                    '`=admin <@membre> / =unadmin`\n┗ Gérer les admins bot',
+                    '`=mod <@membre> / =unmod`\n┗ Gérer les modos bot',
+                    '`=owners`\n┗ Liste des owners',
                     '`=setlog <#salon>`\n┗ Salon de logs général',
                     '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue'
                 ]
@@ -1001,7 +1002,6 @@ client.on('messageCreate', async message => {
     if (command === 'antibot') {
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
-            // Strictement réservé au Super Owner absolu
             if (!isSuperOwner(message)) {
                 return message.reply("❌ Seul le Super Owner absolu (`graveuhq`) peut activer ou désactiver l'Anti-Bot !");
             }
@@ -1054,9 +1054,65 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
+    // Gestion des rôles Staff / Owners / Admins / Modos restaurée et complète
+    if (command === 'owner') {
+        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner.");
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("Utilisation : `=owner <@user|ID>`");
+        botOwners.add(targetUser.id);
+        botOwners.add(targetUser.username.toLowerCase());
+        return message.reply(`✅ **${targetUser.tag}** ajouté aux owners du bot.`);
+    }
+
+    if (command === 'unowner') {
+        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner.");
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("Utilisation : `=unowner <@user|ID>`");
+        if (targetUser.id === "1166445202148442112") return message.reply("❌ Impossible de retirer le Super Owner principal !");
+        botOwners.delete(targetUser.id);
+        botOwners.delete(targetUser.username.toLowerCase());
+        return message.reply(`✅ **${targetUser.tag}** retiré des owners du bot.`);
+    }
+
+    if (command === 'admin') {
+        if (!isOwner(message)) return message.reply("❌ Réservé aux owners.");
+        const targetMember = await fetchTargetMember(message, targetArg);
+        if (!targetMember) return message.reply("Utilisation : `=admin <@membre|ID>`");
+        const staff = getStaffRoles(message.guild.id);
+        staff.admins.add(targetMember.id);
+        return message.reply(`✅ **${targetMember.user.tag}** défini comme Admin bot.`);
+    }
+
+    if (command === 'unadmin') {
+        if (!isOwner(message)) return message.reply("❌ Réservé aux owners.");
+        const targetMember = await fetchTargetMember(message, targetArg);
+        if (!targetMember) return message.reply("Utilisation : `=unadmin <@membre|ID>`");
+        const staff = getStaffRoles(message.guild.id);
+        staff.admins.delete(targetMember.id);
+        return message.reply(`✅ **${targetMember.user.tag}** retiré des Admins bot.`);
+    }
+
+    if (command === 'mod') {
+        if (!isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
+        const targetMember = await fetchTargetMember(message, targetArg);
+        if (!targetMember) return message.reply("Utilisation : `=mod <@membre|ID>`");
+        const staff = getStaffRoles(message.guild.id);
+        staff.mods.add(targetMember.id);
+        return message.reply(`✅ **${targetMember.user.tag}** défini comme Modo bot.`);
+    }
+
+    if (command === 'unmod') {
+        if (!isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
+        const targetMember = await fetchTargetMember(message, targetArg);
+        if (!targetMember) return message.reply("Utilisation : `=unmod <@membre|ID>`");
+        const staff = getStaffRoles(message.guild.id);
+        staff.mods.delete(targetMember.id);
+        return message.reply(`✅ **${targetMember.user.tag}** retiré des Modos bot.`);
+    }
+
     if (command === 'owners') {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Propriétaire Unique').setDescription(ownerList)] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Propriétaire Unique & Owners').setDescription(ownerList)] });
     }
     if (command === 'stats') {
         const guild = message.guild;
@@ -1369,7 +1425,6 @@ client.on('messageCreate', async message => {
         const role = await fetchTargetRole(message, args[1]);
         if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle|ID>`");
         
-        // Vérification de la hiérarchie pour les non-super-owners
         if (!isSuperOwner(message)) {
             const authorHighest = message.member.roles.highest.position;
             const botHighest = message.guild.members.me.roles.highest.position;
