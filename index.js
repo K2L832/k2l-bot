@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Complete-v30.0
+// Build Revision: K2L-Bot-Ultra-Complete-v31.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Complete Operational v30.0!\n');
+    res.end('K2L Bot Ultra Complete Operational v31.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -411,7 +411,6 @@ client.on('interactionCreate', async interaction => {
                 { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
             ];
 
-            // Donner l'accès au rôle spécifique configuré pour ce type de ticket
             if (catObj.roleId && guild.roles.cache.has(catObj.roleId)) {
                 overwrites.push({
                     id: catObj.roleId,
@@ -442,7 +441,6 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Fermer le ticket').setStyle(ButtonStyle.Danger)
             );
 
-            // Ping du créateur + du rôle dédié si configuré
             const mentionContent = catObj.roleId ? `<@${member.id}> <@&${catObj.roleId}>` : `<@${member.id}>`;
             await ticketChannel.send({ content: mentionContent, embeds: [embed], components: [closeRow] });
 
@@ -1254,7 +1252,6 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Le type de ticket **${ticketCat.name}** s'ouvrira désormais dans la catégorie ID : \`${catId}\``);
     }
 
-    // NOUVELLE COMMANDE : Donner accès à un rôle spécifique sur un type de ticket et le ping à l'ouverture
     if (command === 'setticketrole') {
         const role = await fetchTargetRole(message, args[0]);
         const ticketName = args.slice(1).join(' ').toLowerCase();
@@ -1291,7 +1288,19 @@ client.on('messageCreate', async message => {
 
     if (command === 'setticketimage') {
         const url = args[0];
-        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");    if (command === 'jail') {
+        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");
+        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
+        return message.reply("✅ Image / GIF du panneau mis à jour.");
+    }
+
+    if (command === 'closeticket') {
+        const channel = message.channel;
+        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
+        await message.reply("🔒 Fermeture du ticket en cours...");
+        setTimeout(() => channel.delete().catch(() => {}), 2000);
+        return;
+    }
+    if (command === 'jail') {
         const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
         if (!targetMember) return message.reply("❌ Mentionne un membre.");
@@ -1531,15 +1540,3 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
-
-        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
-        return message.reply("✅ Image / GIF du panneau mis à jour.");
-    }
-
-    if (command === 'closeticket') {
-        const channel = message.channel;
-        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
-        await message.reply("🔒 Fermeture du ticket en cours...");
-        setTimeout(() => channel.delete().catch(() => {}), 2000);
-        return;
-    }
