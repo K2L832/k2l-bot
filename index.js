@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Complete-v29.0
+// Build Revision: K2L-Bot-Ultra-Complete-v30.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Complete Operational v29.0!\n');
+    res.end('K2L Bot Ultra Complete Operational v30.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -15,6 +15,7 @@ const client = new Client({
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMembers,
         GatewayIntentBits.GuildVoiceStates,
+        GatewayIntentBits.GuildPresences,
     ]
 });
 
@@ -28,7 +29,7 @@ const warningsMap = new Map();
 const jailDataMap = new Map();
 const activeNukes = new Map();
 
-// Ton ID et ton pseudo uniques en tant que Super Owner absolu
+// Super Owner unique et absolu
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq"]); 
 const botOwners = new Set(["1166445202148442112", "graveuhq"]); 
 
@@ -105,10 +106,10 @@ function getGuildConfig(guildId) {
                 imageUrl: null,
                 published: false,
                 categories: [
-                    { id: 'ticket_bugs', name: 'Bugs', emoji: '🤖', categoryId: null, description: 'Signaler un bug technique' },
-                    { id: 'ticket_signalements', name: 'Signalements', emoji: '⚖️', categoryId: null, description: 'Signaler un membre' },
-                    { id: 'ticket_infos', name: 'Informations', emoji: '📢', categoryId: null, description: 'Questions générales' },
-                    { id: 'ticket_recrutement', name: 'Recrutement', emoji: '🛠️', categoryId: null, description: 'Postuler dans le staff' }
+                    { id: 'ticket_bugs', name: 'Bugs', emoji: '🤖', categoryId: null, roleId: null, description: 'Signaler un bug technique' },
+                    { id: 'ticket_signalements', name: 'Signalements', emoji: '⚖️', categoryId: null, roleId: null, description: 'Signaler un membre' },
+                    { id: 'ticket_infos', name: 'Informations', emoji: '📢', categoryId: null, roleId: null, description: 'Questions générales' },
+                    { id: 'ticket_recrutement', name: 'Recrutement', emoji: '🛠️', categoryId: null, roleId: null, description: 'Postuler dans le staff' }
                 ]
             }
         });
@@ -321,7 +322,12 @@ function getTicketDashboardEmbed(guild, config) {
     const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
     const imgStatus = tConfig.imageUrl ? '✅ image/gif enregistré' : '❌ Aucun';
     const pubStatus = tConfig.published ? '🟢 publié' : '🔴 non publié';
-    const catList = tConfig.categories.map(c => `${c.emoji} **${c.name}** ${c.categoryId ? `(Cat: \`${c.categoryId}\`)` : ''}`).join(' • ') || 'Aucune catégorie';
+    const catList = tConfig.categories.map(c => {
+        const catTag = c.categoryId ? `Cat: \`${c.categoryId}\`` : '';
+        const roleTag = c.roleId ? `Rôle: <@&${c.roleId}>` : '';
+        const extras = [catTag, roleTag].filter(Boolean).join(' | ');
+        return `${c.emoji} **${c.name}** ${extras ? `(${extras})` : ''}`;
+    }).join('\n') || 'Aucune catégorie';
 
     return new EmbedBuilder()
         .setColor('#2b2d31')
@@ -333,8 +339,8 @@ function getTicketDashboardEmbed(guild, config) {
             `**Titre :** ${tConfig.title}\n` +
             `**Image / GIF :** ${imgStatus}\n` +
             `**Panneau :** ${pubStatus}\n\n` +
-            `**Catégories & Salons dédiés :**\n${catList}\n\n` +
-            `*Utilise \`=setticketcatid <ID_Catégorie> <Nom_Ticket>\` pour assigner une catégorie spécifique à un type de ticket.*`
+            `**Catégories, Salons & Rôles dédiés :**\n${catList}\n\n` +
+            `*Commandes : \`=setticketcatid <ID> <Nom>\` • \`=setticketrole <@rôle|ID> <Nom>\`*`
         );
 }
 
@@ -397,13 +403,21 @@ client.on('interactionCreate', async interaction => {
         const config = getGuildConfig(guild.id);
         const tConfig = config.ticketConfig;
 
-        const catObj = tConfig.categories.find(c => c.id === selectedValue) || { name: 'support', emoji: '🎫', categoryId: null };
+        const catObj = tConfig.categories.find(c => c.id === selectedValue) || { name: 'support', emoji: '🎫', categoryId: null, roleId: null };
 
         try {
             const overwrites = [
                 { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
                 { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
             ];
+
+            // Donner l'accès au rôle spécifique configuré pour ce type de ticket
+            if (catObj.roleId && guild.roles.cache.has(catObj.roleId)) {
+                overwrites.push({
+                    id: catObj.roleId,
+                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
+                });
+            }
 
             const channelOptions = {
                 name: `${catObj.name.toLowerCase()}-${member.user.username}`,
@@ -428,12 +442,14 @@ client.on('interactionCreate', async interaction => {
                 new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Fermer le ticket').setStyle(ButtonStyle.Danger)
             );
 
-            await ticketChannel.send({ content: `<@${member.id}>`, embeds: [embed], components: [closeRow] });
+            // Ping du créateur + du rôle dédié si configuré
+            const mentionContent = catObj.roleId ? `<@${member.id}> <@&${catObj.roleId}>` : `<@${member.id}>`;
+            await ticketChannel.send({ content: mentionContent, embeds: [embed], components: [closeRow] });
 
             const logEmbed = new EmbedBuilder()
                 .setColor('#3498db')
                 .setTitle('🎫 Ticket ouvert')
-                .setDescription(`**Membre :** ${member.user.tag} (\`${member.user.id}\`)\n**Salon :** ${ticketChannel}\n**Type :** \`${catObj.name}\``)
+                .setDescription(`**Membre :** ${member.user.tag} (\`${member.user.id}\`)\n**Salon :** ${ticketChannel}\n**Type :** \`${catObj.name}\`${catObj.roleId ? `\n**Rôle notifié :** <@&${catObj.roleId}>` : ''}`)
                 .setTimestamp();
             sendLog(guild, logEmbed);
 
@@ -489,7 +505,7 @@ client.on('interactionCreate', async interaction => {
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
-                return interaction.reply({ content: `⚙️ **Salons & Catégories :**\n• Salon du panneau : \`=setticketpanel #salon\`\n• Catégorie globale : \`=setticketcat <ID>\`\n• Catégorie spécifique : \`=setticketcatid <ID> <Nom>\`\n• Logs : \`=setticketlog #salon\``, ephemeral: true });
+                return interaction.reply({ content: `⚙️ **Salons, Catégories & Rôles :**\n• Salon du panneau : \`=setticketpanel #salon\`\n• Catégorie globale : \`=setticketcat <ID>\`\n• Catégorie spécifique : \`=setticketcatid <ID> <Nom>\`\n• Rôle dédié & ping : \`=setticketrole <@rôle|ID> <Nom>\`\n• Logs : \`=setticketlog #salon\``, ephemeral: true });
             }
             if (action === 'texte') {
                 const modal = new ModalBuilder()
@@ -529,8 +545,8 @@ client.on('interactionCreate', async interaction => {
                 return interaction.showModal(modal);
             }
             if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** -> Cat: \`${c.categoryId || 'Défaut'}\``).join('\n') || 'Aucune';
-                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Assigner catégorie : \`=setticketcatid <ID> <Nom>\``, ephemeral: true });
+                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** -> Cat: \`${c.categoryId || 'Défaut'}\` | Rôle: ${c.roleId ? `<@&${c.roleId}>` : '`Aucun`'}`).join('\n') || 'Aucune';
+                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Assigner catégorie : \`=setticketcatid <ID> <Nom>\`\n• Assigner rôle : \`=setticketrole <@rôle|ID> <Nom>\``, ephemeral: true });
             }
             if (action === 'disable') {
                 if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
@@ -835,6 +851,7 @@ client.on('messageCreate', async message => {
                     '`=setticketpanel <#salon>`\n┗ Salon du panneau',
                     '`=setticketcat <ID>`\n┗ Catégorie globale des tickets',
                     '`=setticketcatid <ID> <nom>`\n┗ Catégorie spécifique par type',
+                    '`=setticketrole <@rôle|ID> <nom>`\n┗ Accès & Ping rôle par type',
                     '`=setticketlog <#salon>`\n┗ Salon de logs',
                     '`=settickettitle <titre>`\n┗ Titre du panneau',
                     '`=setticketdesc <desc>`\n┗ Description',
@@ -849,7 +866,7 @@ client.on('messageCreate', async message => {
                     '`=setantilink <action>`\n┗ Sanction anti-lien',
                     '`=antispam on / off`\n┗ Anti-spam',
                     '`=setantispam <action>`\n┗ Sanction anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot (Seul le Super Owner absolu peut le désactiver)',
+                    '`=antibot on / off`\n┗ Anti-bot (Super Owner uniquement)',
                     '`=setantibot <action>`\n┗ Sanction anti-bot'
                 ]
             },
@@ -898,7 +915,10 @@ client.on('messageCreate', async message => {
             utilitaires: {
                 label: 'Utilitaires', emoji: '📊', title: 'Stats & Utilitaires',
                 commands: [
-                    '`=stats`\n┗ Statistiques détaillées du serveur'
+                    '`=stats`\n┗ Stats serveur (En ligne, Vocaux, etc.)',
+                    '`=userinfo [@membre|ID]`\n┗ Infos complètes d\'un membre',
+                    '`=avatar [@membre|ID]`\n┗ Afficher la photo de profil',
+                    '`=ping`\n┗ Latence du bot'
                 ]
             },
             giveaways: {
@@ -1054,7 +1074,6 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    // Gestion des rôles Staff / Owners / Admins / Modos restaurée et complète
     if (command === 'owner') {
         if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner.");
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
@@ -1119,10 +1138,9 @@ client.on('messageCreate', async message => {
         await guild.members.fetch();
         const totalMembers = guild.memberCount;
         const onlineMembers = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
+        const voiceMembersCount = guild.members.cache.filter(m => m.voice && m.voice.channelId).size;
         const botCount = guild.members.cache.filter(m => m.user.bot).size;
         const humanCount = totalMembers - botCount;
-        const voiceChannelsCount = guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
-        const textChannelsCount = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
         const boostCount = guild.premiumSubscriptionCount || 0;
         const boostTier = guild.premiumTier;
 
@@ -1132,7 +1150,7 @@ client.on('messageCreate', async message => {
             .setThumbnail(guild.iconURL({ dynamic: true }))
             .addFields(
                 { name: '👥 Membres', value: `Total : \`${totalMembers}\`\nHumains : \`${humanCount}\`\nBots : \`${botCount}\``, inline: true },
-                { name: '💬 Salons', value: `Texte : \`${textChannelsCount}\`\nVocal : \`${voiceChannelsCount}\``, inline: true },
+                { name: '🟢 Activité', value: `En ligne : \`${onlineMembers}\`\nEn vocal : \`${voiceMembersCount}\``, inline: true },
                 { name: '🚀 Boosts', value: `Niveau : \`${boostTier}\`\nBoosts : \`${boostCount}\``, inline: true },
                 { name: '👑 Propriétaire', value: `<@${guild.ownerId}>`, inline: true },
                 { name: '📅 Création', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true }
@@ -1140,6 +1158,46 @@ client.on('messageCreate', async message => {
             .setTimestamp();
 
         return message.reply({ embeds: [statsEmbed] });
+    }
+
+    if (command === 'userinfo') {
+        const targetMember = await fetchTargetMember(message, targetArg) || message.member;
+        const user = targetMember.user;
+        const roles = targetMember.roles.cache
+            .filter(r => r.id !== message.guild.id)
+            .sort((a, b) => b.position - a.position)
+            .map(r => `<@&${r.id}>`)
+            .slice(0, 10)
+            .join(', ') || 'Aucun rôle';
+
+        const infoEmbed = new EmbedBuilder()
+            .setColor(targetMember.displayHexColor !== '#000000' ? targetMember.displayHexColor : '#2b2d31')
+            .setTitle(`👤 Informations : ${user.tag}`)
+            .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
+            .addFields(
+                { name: '🆔 ID', value: `\`${user.id}\``, inline: true },
+                { name: '📆 Création du compte', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
+                { name: '📥 Arrivée sur le serveur', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
+                { name: `🏷️ Rôles (${targetMember.roles.cache.size - 1})`, value: roles }
+            )
+            .setTimestamp();
+
+        return message.reply({ embeds: [infoEmbed] });
+    }
+
+    if (command === 'avatar') {
+        const targetUser = await fetchTargetUser(client, message.guild, targetArg) || message.author;
+        const avatarEmbed = new EmbedBuilder()
+            .setColor('#2b2d31')
+            .setTitle(`🖼️ Avatar de ${targetUser.username}`)
+            .setImage(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
+        return message.reply({ embeds: [avatarEmbed] });
+    }
+
+    if (command === 'ping') {
+        const sent = await message.reply('🏓 Calcul de la latence...');
+        const latency = sent.createdTimestamp - message.createdTimestamp;
+        return sent.edit(`🏓 **Pong !**\nLatence Bot : \`${latency}ms\`\nLatence API Discord : \`${Math.round(client.ws.ping)}ms\``);
     }
 
     if (command === 'ticketsetup') {
@@ -1155,7 +1213,7 @@ client.on('messageCreate', async message => {
         const newId = `ticket_${name.toLowerCase()}`;
         if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Cette catégorie existe déjà.");
         
-        tConfig.categories.push({ id: newId, name: name, emoji: emoji, categoryId: null, description: `Ouvrir un ticket ${name}` });
+        tConfig.categories.push({ id: newId, name: name, emoji: emoji, categoryId: null, roleId: null, description: `Ouvrir un ticket ${name}` });
         return message.reply(`✅ Type de ticket **${name}** (${emoji}) ajouté ! Ouvre \`=ticketsetup\` pour voir les changements.`);
     }
 
@@ -1196,6 +1254,20 @@ client.on('messageCreate', async message => {
         return message.reply(`✅ Le type de ticket **${ticketCat.name}** s'ouvrira désormais dans la catégorie ID : \`${catId}\``);
     }
 
+    // NOUVELLE COMMANDE : Donner accès à un rôle spécifique sur un type de ticket et le ping à l'ouverture
+    if (command === 'setticketrole') {
+        const role = await fetchTargetRole(message, args[0]);
+        const ticketName = args.slice(1).join(' ').toLowerCase();
+        if (!role || !ticketName) return message.reply("Utilisation : `=setticketrole <@rôle|ID> <Nom_Du_Ticket>`");
+
+        const tConfig = config.ticketConfig;
+        const ticketCat = tConfig.categories.find(c => c.name.toLowerCase() === ticketName || c.id === `ticket_${ticketName}`);
+        if (!ticketCat) return message.reply(`❌ Aucun type de ticket trouvé avec le nom \`${ticketName}\`.`);
+
+        ticketCat.roleId = role.id;
+        return message.reply(`✅ Le rôle **${role.name}** aura désormais accès et sera ping à chaque ouverture de ticket **${ticketCat.name}** !`);
+    }
+
     if (command === 'setticketlog') {
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketlog <#salon>`");
@@ -1219,19 +1291,7 @@ client.on('messageCreate', async message => {
 
     if (command === 'setticketimage') {
         const url = args[0];
-        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");
-        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
-        return message.reply("✅ Image / GIF du panneau mis à jour.");
-    }
-
-    if (command === 'closeticket') {
-        const channel = message.channel;
-        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
-        await message.reply("🔒 Fermeture du ticket en cours...");
-        setTimeout(() => channel.delete().catch(() => {}), 2000);
-        return;
-    }
-    if (command === 'jail') {
+        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");    if (command === 'jail') {
         const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
         if (!targetMember) return message.reply("❌ Mentionne un membre.");
@@ -1471,3 +1531,15 @@ client.on('messageCreate', async message => {
 });
 
 client.login(process.env.DISCORD_TOKEN);
+
+        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
+        return message.reply("✅ Image / GIF du panneau mis à jour.");
+    }
+
+    if (command === 'closeticket') {
+        const channel = message.channel;
+        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
+        await message.reply("🔒 Fermeture du ticket en cours...");
+        setTimeout(() => channel.delete().catch(() => {}), 2000);
+        return;
+    }
