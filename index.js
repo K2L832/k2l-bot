@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Complete-v31.0
+// Build Revision: K2L-Bot-Ultra-Secure-v32.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Complete Operational v31.0!\n');
+    res.end('K2L Bot Ultra Secure Operational v32.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -20,6 +20,7 @@ const client = new Client({
 });
 
 const PREFIX = '=';
+const NO_PERM_MSG = "vous n'avez pas l'autorisation d'exécuter cette commande";
 
 const snipeCache = new Map();
 const spamTracker = new Map();
@@ -30,8 +31,9 @@ const jailDataMap = new Map();
 const activeNukes = new Map();
 
 // Super Owner unique et absolu
+const SUPER_OWNER_ID = "1166445202148442112";
 const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq"]); 
-const botOwners = new Set(["1166445202148442112", "graveuhq"]); 
+const botOwners = new Set(["1166445202148442112"]); 
 
 function isSuperOwnerById(userId, username = "", globalName = "") {
     if (SUPER_OWNERS.has(userId)) return true;
@@ -43,21 +45,11 @@ function isSuperOwnerById(userId, username = "", globalName = "") {
 function isSuperOwner(message) {
     if (!message || !message.author) return false;
     const userId = message.author.id;
-    const username = message.author.username.toLowerCase();
+    const username = message.author.username ? message.author.username.toLowerCase() : "";
     const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
-    if (message.guild && message.guild.ownerId === userId && SUPER_OWNERS.has(userId)) return true;
     return isSuperOwnerById(userId, username, globalName);
 }
 
-function isOwner(message) {
-    if (!message || !message.author) return false;
-    const userId = message.author.id;
-    const username = message.author.username.toLowerCase();
-    const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
-    if (message.guild && message.guild.ownerId === userId) return true;
-    if (botOwners.has(userId) || botOwners.has(username) || botOwners.has(globalName)) return true;
-    return false;
-}
 function getStaffRoles(guildId) {
     if (!guildStaffConfig.has(guildId)) {
         guildStaffConfig.set(guildId, {
@@ -68,21 +60,31 @@ function getStaffRoles(guildId) {
     return guildStaffConfig.get(guildId);
 }
 
+function getUserRankLevel(message, userId = null) {
+    const targetId = userId || (message && message.author ? message.author.id : null);
+    if (!targetId) return 0;
+    if (targetId === SUPER_OWNER_ID) return 4;
+    if (message && message.author && message.author.id === targetId && isSuperOwner(message)) return 4;
+    if (botOwners.has(targetId)) return 3;
+    if (message && message.guild) {
+        const staff = getStaffRoles(message.guild.id);
+        if (staff.admins.has(targetId)) return 2;
+        if (staff.mods.has(targetId)) return 1;
+    }
+    return 0;
+}
+
+function isOwner(message) {
+    return getUserRankLevel(message) >= 3;
+}
+
 function isAdmin(message) {
-    if (!message) return false;
-    if (isOwner(message)) return true;
-    if (message.member && message.member.permissions.has(PermissionsBitField.Flags.Administrator)) return true;
-    const staff = getStaffRoles(message.guild.id);
-    return staff.admins.has(message.author.id);
+    return getUserRankLevel(message) >= 2;
 }
 
 function isMod(message) {
-    if (!message) return false;
-    if (isAdmin(message)) return true;
-    const staff = getStaffRoles(message.guild.id);
-    return staff.mods.has(message.author.id);
+    return getUserRankLevel(message) >= 1;
 }
-
 function getGuildConfig(guildId) {
     if (!serverConfig.has(guildId)) {
         serverConfig.set(guildId, {
@@ -280,7 +282,8 @@ client.on('guildMemberAdd', async member => {
                 const auditLog = fetchedLogs.entries.first();
                 const executor = auditLog ? auditLog.executor : null;
 
-                const isExecutorSuperOwner = executor ? SUPER_OWNERS.has(executor.id) || SUPER_OWNERS.has(executor.username.toLowerCase()) : false;
+                // Seul le Super Owner absolu peut bypass l'antibot
+                const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
 
                 if (!isExecutorSuperOwner) {
                     await member.kick('Anti-bot activé.');
@@ -500,6 +503,11 @@ client.on('interactionCreate', async interaction => {
         }
 
         if (interaction.customId.startsWith('t_dash_')) {
+            const actorRank = getUserRankLevel(null, interaction.user.id) || (isSuperOwnerById(interaction.user.id, interaction.user.username, interaction.user.globalName) ? 4 : 0);
+            if (actorRank < 3) {
+                return interaction.reply({ content: NO_PERM_MSG, ephemeral: true }).catch(() => {});
+            }
+
             const action = interaction.customId.replace('t_dash_', '');
 
             if (action === 'salons') {
@@ -772,7 +780,8 @@ client.on('messageCreate', async message => {
     }
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
-    const isOwnerOrSuper = isOwner(message) || isSuperOwner(message);
+    const authorRank = getUserRankLevel(message);
+    const isOwnerOrSuper = authorRank >= 3;
 
     if (config.antilink && !isOwnerOrSuper) {
         const linkRegex = /(https?:\/\/[^\s]+|discord\.gg\/[^\s]+|discord\.com\/invite\/[^\s]+)/i;
@@ -813,7 +822,16 @@ client.on('messageCreate', async message => {
     const command = args.shift().toLowerCase();
     const targetArg = args[0];
 
+    const requireRank = (minRank) => {
+        if (authorRank < minRank) {
+            message.reply(NO_PERM_MSG).catch(() => {});
+            return false;
+        }
+        return true;
+    };
+
     if (command === 'embed') {
+        if (!requireRank(2)) return;
         const fullContent = args.join(' ');
         if (!fullContent.includes('|')) {
             return message.reply("❌ **Commande non correcte.** Utilisation : `=embed <titre> | <description>`");
@@ -864,7 +882,7 @@ client.on('messageCreate', async message => {
                     '`=setantilink <action>`\n┗ Sanction anti-lien',
                     '`=antispam on / off`\n┗ Anti-spam',
                     '`=setantispam <action>`\n┗ Sanction anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot (Super Owner uniquement)',
+                    '`=antibot on / off`\n┗ Anti-bot',
                     '`=setantibot <action>`\n┗ Sanction anti-bot'
                 ]
             },
@@ -904,7 +922,7 @@ client.on('messageCreate', async message => {
                 ]
             },
             roles: {
-                label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles (Sécurisée)',
+                label: 'Rôles', emoji: '🏷️', title: 'Gestion des Rôles',
                 commands: [
                     '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle',
                     '`=delrole <@membre> <@rôle|ID>`\n┗ Retirer un rôle'
@@ -913,9 +931,9 @@ client.on('messageCreate', async message => {
             utilitaires: {
                 label: 'Utilitaires', emoji: '📊', title: 'Stats & Utilitaires',
                 commands: [
-                    '`=stats`\n┗ Stats serveur (En ligne, Vocaux, etc.)',
-                    '`=userinfo [@membre|ID]`\n┗ Infos complètes d\'un membre',
-                    '`=avatar [@membre|ID]`\n┗ Afficher la photo de profil',
+                    '`=stats`\n┗ Stats serveur',
+                    '`=userinfo [@membre|ID]`\n┗ Infos d\'un membre',
+                    '`=avatar [@membre|ID]`\n┗ Photo de profil',
                     '`=ping`\n┗ Latence du bot'
                 ]
             },
@@ -986,14 +1004,17 @@ client.on('messageCreate', async message => {
         return;
     }
     if (command === 'antilink') {
+        if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
             config.antilink = (sub === 'on');
             return message.reply(`🛡️ Anti-Link réglé sur **${sub.toUpperCase()}**`);
         }
+        return message.reply("Utilisation : `=antilink on / off`");
     }
 
     if (command === 'setantilink') {
+        if (!requireRank(3)) return;
         const action = args[0]?.toLowerCase();
         const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
         if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
@@ -1002,14 +1023,17 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'antispam') {
+        if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
             config.antispam = (sub === 'on');
             return message.reply(`🛡️ Anti-Spam réglé sur **${sub.toUpperCase()}**`);
         }
+        return message.reply("Utilisation : `=antispam on / off`");
     }
 
     if (command === 'setantispam') {
+        if (!requireRank(3)) return;
         const action = args[0]?.toLowerCase();
         const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
         if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
@@ -1017,19 +1041,19 @@ client.on('messageCreate', async message => {
         return message.reply(`🛡️ Sanction Anti-Spam mise à jour : \`${action}\``);
     }
 
+    // Antibot strictement réservé au Super Owner (niveau 4)
     if (command === 'antibot') {
+        if (!requireRank(4)) return;
         const sub = args[0]?.toLowerCase();
         if (sub === 'on' || sub === 'off') {
-            if (!isSuperOwner(message)) {
-                return message.reply("❌ Seul le Super Owner absolu (`graveuhq`) peut activer ou désactiver l'Anti-Bot !");
-            }
             config.antibot = (sub === 'on');
             return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}** par le Super Owner.`);
         }
+        return message.reply("Utilisation : `=antibot on / off`");
     }
 
     if (command === 'setantibot') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner absolu.");
+        if (!requireRank(4)) return;
         const action = args[0]?.toLowerCase();
         const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
         if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
@@ -1072,56 +1096,65 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
+    // Hiérarchie : Super Owner (4) > Owner (3) > Admin (2) > Mod (1)
     if (command === 'owner') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner.");
+        if (!requireRank(4)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Utilisation : `=owner <@user|ID>`");
+        if (targetUser.id === SUPER_OWNER_ID) return message.reply("❌ Action impossible sur le Super Owner.");
         botOwners.add(targetUser.id);
-        botOwners.add(targetUser.username.toLowerCase());
         return message.reply(`✅ **${targetUser.tag}** ajouté aux owners du bot.`);
     }
 
     if (command === 'unowner') {
-        if (!isSuperOwner(message)) return message.reply("❌ Réservé au Super Owner.");
+        if (!requireRank(4)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("Utilisation : `=unowner <@user|ID>`");
-        if (targetUser.id === "1166445202148442112") return message.reply("❌ Impossible de retirer le Super Owner principal !");
+        if (targetUser.id === SUPER_OWNER_ID) return message.reply("❌ Impossible de retirer le Super Owner principal !");
         botOwners.delete(targetUser.id);
-        botOwners.delete(targetUser.username.toLowerCase());
         return message.reply(`✅ **${targetUser.tag}** retiré des owners du bot.`);
     }
 
     if (command === 'admin') {
-        if (!isOwner(message)) return message.reply("❌ Réservé aux owners.");
+        if (!requireRank(3)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("Utilisation : `=admin <@membre|ID>`");
+        const targetRank = getUserRankLevel(message, targetMember.id);
+        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
         const staff = getStaffRoles(message.guild.id);
+        staff.mods.delete(targetMember.id);
         staff.admins.add(targetMember.id);
         return message.reply(`✅ **${targetMember.user.tag}** défini comme Admin bot.`);
     }
 
     if (command === 'unadmin') {
-        if (!isOwner(message)) return message.reply("❌ Réservé aux owners.");
+        if (!requireRank(3)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("Utilisation : `=unadmin <@membre|ID>`");
+        const targetRank = getUserRankLevel(message, targetMember.id);
+        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
         const staff = getStaffRoles(message.guild.id);
         staff.admins.delete(targetMember.id);
         return message.reply(`✅ **${targetMember.user.tag}** retiré des Admins bot.`);
     }
 
     if (command === 'mod') {
-        if (!isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
+        if (!requireRank(2)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("Utilisation : `=mod <@membre|ID>`");
+        const targetRank = getUserRankLevel(message, targetMember.id);
+        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
         const staff = getStaffRoles(message.guild.id);
         staff.mods.add(targetMember.id);
         return message.reply(`✅ **${targetMember.user.tag}** défini comme Modo bot.`);
     }
 
     if (command === 'unmod') {
-        if (!isAdmin(message)) return message.reply("❌ Réservé aux administrateurs.");
+        if (!requireRank(2)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("Utilisation : `=unmod <@membre|ID>`");
+        const targetRank = getUserRankLevel(message, targetMember.id);
+        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
         const staff = getStaffRoles(message.guild.id);
         staff.mods.delete(targetMember.id);
         return message.reply(`✅ **${targetMember.user.tag}** retiré des Modos bot.`);
@@ -1129,7 +1162,7 @@ client.on('messageCreate', async message => {
 
     if (command === 'owners') {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Propriétaire Unique & Owners').setDescription(ownerList)] });
+        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Owners').setDescription(ownerList)] });
     }
     if (command === 'stats') {
         const guild = message.guild;
@@ -1199,10 +1232,12 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'ticketsetup') {
+        if (!requireRank(3)) return;
         return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: getTicketDashboardRows() });
     }
 
     if (command === 'ticketadd') {
+        if (!requireRank(3)) return;
         const name = args[0];
         const emoji = args[1] || '🎫';
         if (!name) return message.reply("Utilisation : `=ticketadd <Nom> <Emoji>`");
@@ -1216,6 +1251,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'ticketremove') {
+        if (!requireRank(3)) return;
         const typeName = args[0]?.toLowerCase();
         if (!typeName) return message.reply("Utilisation : `=ticketremove <Nom>`");
         const tConfig = config.ticketConfig;
@@ -1226,6 +1262,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketpanel') {
+        if (!requireRank(3)) return;
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
         config.ticketConfig.panelChannel = channel.id;
@@ -1233,6 +1270,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketcat') {
+        if (!requireRank(3)) return;
         const catId = args[0];
         if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
         config.ticketConfig.categoryDestination = catId;
@@ -1240,6 +1278,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketcatid') {
+        if (!requireRank(3)) return;
         const catId = args[0];
         const ticketName = args.slice(1).join(' ').toLowerCase();
         if (!catId || !ticketName) return message.reply("Utilisation : `=setticketcatid <ID_Catégorie> <Nom_Du_Ticket>`");
@@ -1253,6 +1292,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketrole') {
+        if (!requireRank(3)) return;
         const role = await fetchTargetRole(message, args[0]);
         const ticketName = args.slice(1).join(' ').toLowerCase();
         if (!role || !ticketName) return message.reply("Utilisation : `=setticketrole <@rôle|ID> <Nom_Du_Ticket>`");
@@ -1266,6 +1306,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketlog') {
+        if (!requireRank(3)) return;
         const channel = message.mentions.channels.first();
         if (!channel) return message.reply("Utilisation : `=setticketlog <#salon>`");
         config.ticketConfig.logChannel = channel.id;
@@ -1273,6 +1314,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'settickettitle') {
+        if (!requireRank(3)) return;
         const newTitle = args.join(' ');
         if (!newTitle) return message.reply("Utilisation : `=settickettitle <Titre>`");
         config.ticketConfig.title = newTitle;
@@ -1280,6 +1322,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketdesc') {
+        if (!requireRank(3)) return;
         const newDesc = args.join(' ');
         if (!newDesc) return message.reply("Utilisation : `=setticketdesc <Description>`");
         config.ticketConfig.description = newDesc;
@@ -1287,6 +1330,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setticketimage') {
+        if (!requireRank(3)) return;
         const url = args[0];
         if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");
         config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
@@ -1294,6 +1338,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'closeticket') {
+        if (!requireRank(1)) return;
         const channel = message.channel;
         if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
         await message.reply("🔒 Fermeture du ticket en cours...");
@@ -1301,9 +1346,11 @@ client.on('messageCreate', async message => {
         return;
     }
     if (command === 'jail') {
+        if (!requireRank(2)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         const reason = args.slice(1).join(' ') || "Aucune raison";
         if (!targetMember) return message.reply("❌ Mentionne un membre.");
+        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
         try {
             const botRolePos = message.guild.members.me.roles.highest.position;
             const roleIds = targetMember.roles.cache.filter(r => r.id !== message.guild.id && !r.managed && r.position < botRolePos).map(r => r.id);
@@ -1324,6 +1371,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'unjail') {
+        if (!requireRank(2)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("❌ Mentionne un membre.");
         try {
@@ -1339,30 +1387,36 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'lock') {
+        if (!requireRank(1)) return;
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
         return message.reply("🔒 Salon verrouillé.");
     }
 
     if (command === 'unlock') {
+        if (!requireRank(1)) return;
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
         return message.reply("🔓 Salon déverrouillé.");
     }
 
     if (command === 'hide') {
+        if (!requireRank(1)) return;
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: false });
         return message.reply("🙈 Salon caché pour tout le monde.");
     }
 
     if (command === 'unhide') {
+        if (!requireRank(1)) return;
         await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: null });
         return message.reply("🐵 Salon visible à nouveau.");
     }
 
     if (command === 'mute') {
+        if (!requireRank(1)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         const durationStr = args[1];
         const reason = args.slice(2).join(' ') || "Aucune raison";
         if (!targetMember || !durationStr) return message.reply("Utilisation : `=mute <@membre> <durée> [raison]`");
+        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
         const ms = parseDuration(durationStr);
         if (!ms) return message.reply("❌ Durée invalide.");
         await targetMember.timeout(ms, reason);
@@ -1370,8 +1424,10 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'warn') {
+        if (!requireRank(1)) return;
         const targetMember = await fetchTargetMember(message, targetArg);
         if (!targetMember) return message.reply("❌ Mentionne un membre.");
+        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
         const reason = args.slice(1).join(' ') || "Aucune raison";
         let userWarns = warningsMap.get(targetMember.id) || [];
         userWarns.push({ reason, moderator: message.author.tag });
@@ -1380,12 +1436,14 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'setlog') {
+        if (!requireRank(3)) return;
         const channel = message.mentions.channels.first() || message.channel;
         config.logChannel = channel.id;
         return message.reply(`✅ Salon de logs défini sur ${channel} !`);
     }
 
     if (command === 'setwelcome') {
+        if (!requireRank(3)) return;
         const channel = message.mentions.channels.first();
         const welcomeText = args.slice(1).join(' ');
         if (!channel || !welcomeText) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
@@ -1395,6 +1453,7 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'gcreate') {
+        if (!requireRank(2)) return;
         const duration = args[0], winnersCount = parseInt(args[1]), prize = args.slice(2).join(' ');
         if (!duration || isNaN(winnersCount) || !prize) return message.reply("Utilisation : `=gcreate <durée> <gagnants> <prix>`");
         const embed = new EmbedBuilder().setColor('#2b2d31').setTitle("🎉 GIVEAWAY 🎉").setDescription(`**Lot :** ${prize}\n**Gagnants :** ${winnersCount}`);
@@ -1404,21 +1463,26 @@ client.on('messageCreate', async message => {
     }
 
     if (command === 'bl') {
+        if (!requireRank(2)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("ID ou mention invalide.");
+        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
         await message.guild.members.ban(targetUser.id);
         return message.reply(`🔨 **${targetUser.tag}** banni.`);
     }
 
     else if (command === 'softbl') {
+        if (!requireRank(2)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
         if (!targetUser) return message.reply("ID invalide.");
+        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
         await message.guild.members.ban(targetUser.id, { deleteMessageSeconds: 604800 });
         await message.guild.members.unban(targetUser.id);
         return message.reply(`🌪️ Softban effectué.`);
     }
 
     else if (command === 'unbl') {
+        if (!requireRank(2)) return;
         const userId = targetArg?.replace(/<@!?|>/g, '');
         if (!userId) return message.reply("ID requis.");
         await message.guild.members.unban(userId);
@@ -1426,34 +1490,41 @@ client.on('messageCreate', async message => {
     }
 
     else if (command === 'blist') {
+        if (!requireRank(2)) return;
         const bans = await message.guild.bans.fetch();
         const banList = bans.map(b => `• **${b.user.tag}**`).slice(0, 15).join('\n') || "Aucun.";
         return message.reply({ embeds: [new EmbedBuilder().setTitle("🔨 Bannissements").setDescription(banList)] });
     }
 
     else if (command === 'unbanall') {
+        if (!requireRank(3)) return;
         const bans = await message.guild.bans.fetch();
         for (const [id] of bans) await message.guild.members.unban(id).catch(() => {});
         return message.reply(`🔓 Tous débannis (${bans.size}).`);
     }
 
     else if (command === 'kick') {
+        if (!requireRank(2)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
+        if (!targetUser) return message.reply("Membre introuvable.");
+        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
         const member = await message.guild.members.fetch(targetUser.id).catch(() => null);
         if (!member) return message.reply("Membre introuvable.");
         await member.kick();
         return message.reply(`✅ Expulsé.`);
     }
     else if (command === 'clear') {
+        if (!requireRank(1)) return;
         const count = parseInt(args[0]);
         if (isNaN(count) || count < 1 || count > 50) return message.reply("❌ Entre 1 et 50.");
-        await message.delete();
+        await message.delete().catch(() => {});
         const fetched = await message.channel.messages.fetch({ limit: count });
         await message.channel.bulkDelete(fetched, true);
         return;
     }
 
     else if (command === 'purge') {
+        if (!requireRank(1)) return;
         const targetUser = await fetchTargetMember(message, targetArg);
         if (!targetUser) return message.reply("Membre introuvable.");
         const fetched = await message.channel.messages.fetch({ limit: 100 });
@@ -1469,27 +1540,37 @@ client.on('messageCreate', async message => {
     }
 
     else if (command === 'slowmode') {
+        if (!requireRank(1)) return;
         const sec = parseInt(args[0]);
+        if (isNaN(sec) || sec < 0) return message.reply("❌ Durée invalide.");
         await message.channel.setRateLimitPerUser(sec);
         return message.reply(`⏱️ Mode lent : ${sec}s.`);
     }
 
     else if (command === 'renew') {
+        if (!requireRank(2)) return;
         const newChan = await message.channel.clone();
         await message.channel.delete();
         newChan.send("🔄 Salon régénéré !");
     }
 
     else if (command === 'createtext') {
-        await message.guild.channels.create({ name: args.join('-'), type: ChannelType.GuildText });
+        if (!requireRank(2)) return;
+        const chanName = args.join('-');
+        if (!chanName) return message.reply("Utilisation : `=createtext <nom>`");
+        await message.guild.channels.create({ name: chanName, type: ChannelType.GuildText });
         return message.reply("✅ Salon texte créé.");
     }
 
     else if (command === 'createvoice') {
-        await message.guild.channels.create({ name: args.join(' '), type: ChannelType.GuildVoice });
+        if (!requireRank(2)) return;
+        const chanName = args.join(' ');
+        if (!chanName) return message.reply("Utilisation : `=createvoice <nom>`");
+        await message.guild.channels.create({ name: chanName, type: ChannelType.GuildVoice });
         return message.reply("✅ Salon vocal créé.");
     }
     else if (command === 'addrole') {
+        if (!requireRank(2)) return;
         const member = await fetchTargetMember(message, targetArg);
         const role = await fetchTargetRole(message, args[1]);
         if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle|ID>`");
@@ -1514,6 +1595,7 @@ client.on('messageCreate', async message => {
         }
     }
     else if (command === 'delrole') {
+        if (!requireRank(2)) return;
         const member = await fetchTargetMember(message, targetArg);
         const role = await fetchTargetRole(message, args[1]);
         if (!member || !role) return message.reply("Utilisation : `=delrole <@membre> <@rôle|ID>`");
