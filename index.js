@@ -1,11 +1,11 @@
-// Build Revision: K2L-Bot-Ultra-Secure-v32.0
+// Build Revision: K2L-Bot-Ultra-Secure-v33.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const http = require('http');
 
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Secure Operational v32.0!\n');
+    res.end('K2L Bot Ultra Secure Operational v33.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -99,6 +99,7 @@ function getGuildConfig(guildId) {
             logChannel: null,
             welcomeChannel: null,
             welcomeText: null,
+            autopingChannels: [],
             ticketConfig: {
                 panelChannel: null,
                 categoryDestination: null,
@@ -116,7 +117,9 @@ function getGuildConfig(guildId) {
             }
         });
     }
-    return serverConfig.get(guildId);
+    const cfg = serverConfig.get(guildId);
+    if (!Array.isArray(cfg.autopingChannels)) cfg.autopingChannels = [];
+    return cfg;
 }
 
 function sendLog(guild, embed) {
@@ -274,8 +277,9 @@ client.on('ready', () => {
     console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
 });
 client.on('guildMemberAdd', async member => {
+    const config = getGuildConfig(member.guild.id);
+
     if (member.user.bot && member.id !== client.user.id) {
-        const config = getGuildConfig(member.guild.id);
         if (config.antibot) {
             try {
                 const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: 28 });
@@ -305,8 +309,20 @@ client.on('guildMemberAdd', async member => {
             } catch (err) {}
         }
     }
-    
-    const config = getGuildConfig(member.guild.id);
+
+    if (Array.isArray(config.autopingChannels) && config.autopingChannels.length > 0) {
+        for (const chanId of config.autopingChannels) {
+            const chan = member.guild.channels.cache.get(chanId);
+            if (chan && chan.isTextBased()) {
+                chan.send(`<@${member.id}>`).then(msg => {
+                    setTimeout(() => {
+                        msg.delete().catch(() => {});
+                    }, 1000);
+                }).catch(() => {});
+            }
+        }
+    }
+
     if (config.welcomeChannel && config.welcomeText) {
         const channel = member.guild.channels.cache.get(config.welcomeChannel);
         if (channel) {
@@ -961,7 +977,8 @@ client.on('messageCreate', async message => {
                     '`=mod <@membre> / =unmod`\n┗ Gérer les modos bot',
                     '`=owners`\n┗ Liste des owners',
                     '`=setlog <#salon>`\n┗ Salon de logs général',
-                    '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue'
+                    '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue',
+                    '`=autoping <add|remove|list|clear> [#salons]`\n┗ Ghostping à l\'arrivée'
                 ]
             }
         };
@@ -1003,6 +1020,62 @@ client.on('messageCreate', async message => {
         collector.on('end', () => sentMsg.edit({ components: [] }).catch(() => {}));
         return;
     }
+    if (command === 'autoping') {
+        if (!requireRank(3)) return;
+        const sub = args[0]?.toLowerCase();
+
+        const extractChannelIds = () => {
+            const ids = new Set();
+            for (const [, ch] of message.mentions.channels) {
+                ids.add(ch.id);
+            }
+            for (const raw of args.slice(1)) {
+                const clean = raw.replace(/<#(\d+)>/, '$1');
+                if (/^\d{15,22}$/.test(clean) && message.guild.channels.cache.has(clean)) {
+                    ids.add(clean);
+                }
+            }
+            return Array.from(ids);
+        };
+
+        if (sub === 'add') {
+            const chanIds = extractChannelIds();
+            if (chanIds.length === 0) return message.reply("Utilisation : `=autoping add <#salon1> [#salon2 ...]`");
+            let added = 0;
+            for (const id of chanIds) {
+                if (!config.autopingChannels.includes(id)) {
+                    config.autopingChannels.push(id);
+                    added++;
+                }
+            }
+            const formatted = chanIds.map(id => `<#${id}>`).join(', ');
+            return message.reply(`✅ Autoping mis à jour (${added} ajouté(s)) : ${formatted}`);
+        }
+
+        if (sub === 'remove') {
+            const chanIds = extractChannelIds();
+            if (chanIds.length === 0) return message.reply("Utilisation : `=autoping remove <#salon1> [#salon2 ...]`");
+            config.autopingChannels = config.autopingChannels.filter(id => !chanIds.includes(id));
+            const formatted = chanIds.map(id => `<#${id}>`).join(', ');
+            return message.reply(`✅ Salon(s) retiré(s) de l'autoping : ${formatted}`);
+        }
+
+        if (sub === 'list') {
+            if (config.autopingChannels.length === 0) {
+                return message.reply("📋 Aucun salon configuré pour l'autoping.");
+            }
+            const list = config.autopingChannels.map(id => `• <#${id}> (\`${id}\`)`).join('\n');
+            return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🔔 Salons Autoping').setDescription(list)] });
+        }
+
+        if (sub === 'clear') {
+            config.autopingChannels = [];
+            return message.reply("🗑️ Tous les salons d'autoping ont été retirés.");
+        }
+
+        return message.reply("Utilisation : `=autoping <add|remove|list|clear> [#salons]`");
+    }
+
     if (command === 'antilink') {
         if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
