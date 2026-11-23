@@ -1,5 +1,5 @@
-// Build Revision: K2L-Bot-Ultra-Fortress-v34.0
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent } = require('discord.js');
+// Build Revision: K2L-Bot-Ultra-Fortress-v35.0
+const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, ActivityType } = require('discord.js');
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -7,7 +7,7 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Fortress Operational v34.0!\n');
+    res.end('K2L Bot Ultra Fortress Operational v35.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -179,6 +179,11 @@ function getGuildConfig(guildId) {
             antiurl: false,
             lockdown: false,
             autoroleIds: [],
+            soutien: {
+                enabled: false,
+                text: null,
+                roleId: null
+            },
             rolePanel: {
                 channelId: null,
                 messageId: null,
@@ -213,6 +218,9 @@ function getGuildConfig(guildId) {
     const cfg = serverConfig.get(guildId);
     if (!Array.isArray(cfg.autopingChannels)) cfg.autopingChannels = [];
     if (!Array.isArray(cfg.autoroleIds)) cfg.autoroleIds = [];
+    if (!cfg.soutien) {
+        cfg.soutien = { enabled: false, text: null, roleId: null };
+    }
     if (!cfg.rolePanel) {
         cfg.rolePanel = {
             channelId: null,
@@ -315,6 +323,42 @@ function containsSuspiciousLink(content) {
     return patterns.some(rx => rx.test(content));
 }
 
+function hasCustomStatusText(presence, targetText) {
+    if (!presence || !Array.isArray(presence.activities) || !targetText) return false;
+    const needle = targetText.trim().toLowerCase();
+    if (!needle) return false;
+    return presence.activities.some(act => {
+        if (act.type !== ActivityType.Custom) return false;
+        const stateText = (act.state || '').toLowerCase();
+        return stateText.includes(needle);
+    });
+}
+
+async function applySoutienRoleToMember(guild, member, presence, soutienCfg) {
+    if (!guild || !member || member.user.bot || !soutienCfg || !soutienCfg.enabled || !soutienCfg.text || !soutienCfg.roleId) return;
+    const role = guild.roles.cache.get(soutienCfg.roleId) || await guild.roles.fetch(soutienCfg.roleId).catch(() => null);
+    if (!role || !role.editable) return;
+
+    const activePresence = presence || member.presence || guild.presences.cache.get(member.id) || null;
+    const matches = hasCustomStatusText(activePresence, soutienCfg.text);
+    const hasRole = member.roles.cache.has(role.id);
+
+    if (matches && !hasRole) {
+        await member.roles.add(role, 'Soutien statut personnalisé détecté').catch(() => {});
+    } else if (!matches && hasRole) {
+        await member.roles.remove(role, 'Statut de soutien retiré').catch(() => {});
+    }
+}
+
+async function syncSoutienForGuild(guild) {
+    const config = getGuildConfig(guild.id);
+    if (!config.soutien || !config.soutien.enabled || !config.soutien.text || !config.soutien.roleId) return;
+    await guild.members.fetch().catch(() => {});
+    for (const [, member] of guild.members.cache) {
+        await applySoutienRoleToMember(guild, member, member.presence, config.soutien);
+    }
+}
+
 async function executeAutoSanction(guild, member, action, reason) {
     if (!member || member.user.bot) return;
     try {
@@ -350,6 +394,21 @@ async function executeAutoSanction(guild, member, action, reason) {
     } catch (e) {}
 }
 
+client.on('presenceUpdate', async (oldPresence, newPresence) => {
+    try {
+        const guild = newPresence?.guild || oldPresence?.guild;
+        if (!guild) return;
+        const config = getGuildConfig(guild.id);
+        if (!config.soutien || !config.soutien.enabled || !config.soutien.text || !config.soutien.roleId) return;
+
+        const targetId = newPresence?.userId || oldPresence?.userId;
+        if (!targetId) return;
+        const member = newPresence?.member || oldPresence?.member || guild.members.cache.get(targetId) || await guild.members.fetch(targetId).catch(() => null);
+        if (!member || member.user.bot) return;
+
+        await applySoutienRoleToMember(guild, member, newPresence || oldPresence, config.soutien);
+    } catch (e) {}
+});
 client.on('messageDelete', async message => {
     if (!message.guild) return;
     const authorTag = message.author ? message.author.tag : 'Inconnu / Cache expiré';
@@ -497,10 +556,10 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
 client.on('ready', () => {
     console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
 });
+
 client.on('guildMemberAdd', async member => {
     const config = getGuildConfig(member.guild.id);
 
-    // Anti-Raid détection de joins en rafale
     if (config.antiraid) {
         const now = Date.now();
         let joins = raidJoinTracker.get(member.guild.id) || [];
@@ -522,7 +581,6 @@ client.on('guildMemberAdd', async member => {
         }
     }
 
-    // Autorole automatique à l'arrivée
     if (Array.isArray(config.autoroleIds) && config.autoroleIds.length > 0) {
         for (const rId of config.autoroleIds) {
             const role = member.guild.roles.cache.get(rId);
@@ -585,7 +643,6 @@ client.on('guildMemberAdd', async member => {
         }
     }
 });
-
 function getTicketDashboardEmbed(guild, config) {
     const tConfig = config.ticketConfig;
     const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
@@ -629,6 +686,7 @@ function getTicketDashboardRows() {
         )
     ];
 }
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.guild) return;
 
@@ -729,6 +787,7 @@ client.on('interactionCreate', async interaction => {
             return interaction.editReply({ content: "❌ Erreur lors de la création du salon de ticket." });
         }
     }
+
     if (interaction.isButton()) {
         const guild = interaction.guild;
         const config = getGuildConfig(guild.id);
@@ -1076,6 +1135,7 @@ client.on('messageCreate', async message => {
             return;
         }
     }
+
     const config = getGuildConfig(message.guild.id);
     const userId = message.author.id;
     const authorRank = getUserRankLevel(message);
@@ -1126,7 +1186,6 @@ client.on('messageCreate', async message => {
         }
         return true;
     };
-
     if (command === 'embed') {
         if (!requireRank(2)) return;
         const fullContent = args.join(' ');
@@ -1152,7 +1211,7 @@ client.on('messageCreate', async message => {
             accueil: {
                 label: 'Accueil', emoji: '🏠', title: 'Accueil du Bot',
                 commands: [
-                    '👋 **Bienvenue sur le menu d\'aide !**\nCe bot offre une gestion complète de ton serveur (Sécurité AutoMod, Anti-Raid, Modération, Système de Tickets interactif, Rôles Bouton, Autorole et Outils).\n\n💬 Pour le moindre problème, question ou bug, contacte directement le créateur en message privé : **@graveuhq**.'
+                    '👋 **Bienvenue sur le menu d\'aide !**\nCe bot offre une gestion complète de ton serveur (Sécurité AutoMod, Anti-Raid, Modération, Système de Tickets interactif, Rôles Bouton, Autorole, Soutien et Outils).\n\n💬 Pour le moindre problème, question ou bug, contacte directement le créateur en message privé : **@graveuhq**.'
                 ]
             },
             tickets: {
@@ -1221,11 +1280,12 @@ client.on('messageCreate', async message => {
                 ]
             },
             roles: {
-                label: 'Rôles & Panels', emoji: '🏷️', title: 'Gestion des Rôles & Boutons',
+                label: 'Rôles & Panels', emoji: '🏷️', title: 'Gestion des Rôles, Soutien & Boutons',
                 commands: [
                     '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle',
                     '`=delrole <@membre> <@rôle|ID>`\n┗ Retirer un rôle',
                     '`=autorole <add|remove|list|clear> [@rôles|IDs]`\n┗ Rôle auto à l\'arrivée',
+                    '`=soutien set <@rôle|ID> <texte>` / `=soutien off` / `=soutien status`\n┗ Rôle auto selon le statut personnalisé',
                     '`=panelrole <#salon> <@rôle|ID> | <Titre> | <Description> | [LabelBouton]`\n┗ Créer embed + bouton rôle',
                     '`=editpanel <Nouvelle description>`\n┗ Modifier la description du panel rôle'
                 ]
@@ -1306,6 +1366,54 @@ client.on('messageCreate', async message => {
         collector.on('end', () => sentMsg.edit({ components: [] }).catch(() => {}));
         return;
     }
+
+    if (command === 'soutien') {
+        if (!requireRank(3)) return;
+        const sub = args[0]?.toLowerCase();
+
+        if (sub === 'off') {
+            config.soutien = {
+                enabled: false,
+                text: config.soutien ? config.soutien.text : null,
+                roleId: config.soutien ? config.soutien.roleId : null
+            };
+            saveBotData();
+            return message.reply("🔕 Système **soutien** désactivé.");
+        }
+
+        if (sub === 'status') {
+            const s = config.soutien || { enabled: false, text: null, roleId: null };
+            const roleDisp = s.roleId ? `<@&${s.roleId}> (\`${s.roleId}\`)` : 'Aucun';
+            const textDisp = s.text ? `\`${s.text}\`` : 'Aucun';
+            return message.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setColor('#2b2d31')
+                        .setTitle('💖 Configuration Soutien')
+                        .setDescription(`**État :** ${s.enabled ? '🟢 Activé' : '🔴 Désactivé'}\n**Texte demandé :** ${textDisp}\n**Rôle attribué :** ${roleDisp}`)
+                ]
+            });
+        }
+
+        if (sub === 'set') {
+            const role = await fetchTargetRole(message, args[1]);
+            const soutienText = args.slice(2).join(' ').trim();
+            if (!role || !soutienText) {
+                return message.reply("Utilisation : `=soutien set <@rôle|ID> <texte du statut>`");
+            }
+            config.soutien = {
+                enabled: true,
+                text: soutienText,
+                roleId: role.id
+            };
+            saveBotData();
+            await syncSoutienForGuild(message.guild);
+            return message.reply(`✅ Soutien activé ! Si un membre met \`${soutienText}\` dans son statut, il recevra <@&${role.id}> (et le perdra dès qu'il le retire).`);
+        }
+
+        return message.reply("Utilisation : `=soutien set <@rôle|ID> <texte>` • `=soutien off` • `=soutien status`");
+    }
+
     if (command === 'autorole') {
         if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
@@ -1568,7 +1676,6 @@ client.on('messageCreate', async message => {
         return message.reply(`🛡️ Sanction Anti-Spam mise à jour : \`${action}\``);
     }
 
-    // Antibot strictement réservé au Super Owner (niveau 4)
     if (command === 'antibot') {
         if (!requireRank(4)) return;
         const sub = args[0]?.toLowerCase();
@@ -1589,7 +1696,6 @@ client.on('messageCreate', async message => {
         saveBotData();
         return message.reply(`🛡️ Sanction Anti-Bot mise à jour : \`${action}\``);
     }
-
     if (command === 'gay') {
         const target = message.mentions.users.first() || message.author;
         const percent = Math.floor(Math.random() * 101);
@@ -1625,7 +1731,6 @@ client.on('messageCreate', async message => {
         return message.reply({ embeds: [embed] });
     }
 
-    // Hiérarchie : Super Owner (4) > Owner (3) > Admin (2) > Mod (1)
     if (command === 'owner') {
         if (!requireRank(4)) return;
         const targetUser = await fetchTargetUser(client, message.guild, targetArg);
@@ -1699,6 +1804,7 @@ client.on('messageCreate', async message => {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
         return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Owners').setDescription(ownerList)] });
     }
+
     if (command === 'stats') {
         const guild = message.guild;
         await guild.members.fetch();
@@ -2063,6 +2169,7 @@ client.on('messageCreate', async message => {
         await member.kick();
         return message.reply(`✅ Expulsé.`);
     }
+
     else if (command === 'clear') {
         if (!requireRank(1)) return;
         const count = parseInt(args[0]);
@@ -2119,6 +2226,7 @@ client.on('messageCreate', async message => {
         await message.guild.channels.create({ name: chanName, type: ChannelType.GuildVoice });
         return message.reply("✅ Salon vocal créé.");
     }
+
     else if (command === 'addrole') {
         if (!requireRank(2)) return;
         const member = await fetchTargetMember(message, targetArg);
@@ -2144,6 +2252,7 @@ client.on('messageCreate', async message => {
             return message.reply("❌ Erreur lors de l'ajout du rôle (Vérifie mes permissions).");
         }
     }
+
     else if (command === 'delrole') {
         if (!requireRank(2)) return;
         const member = await fetchTargetMember(message, targetArg);
