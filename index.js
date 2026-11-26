@@ -1,2335 +1,1476 @@
-// Build Revision: K2L-Bot-Ultra-Fortress-v36.0
-const { Client, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, PermissionsBitField, ChannelType, AttachmentBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, AuditLogEvent, ActivityType } = require('discord.js');
+// Build Revision: Kyuro-Casino-v9.0-Auctions-Roulette-BJ (Prefix: *)
+const {
+    Client,
+    GatewayIntentBits,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ModalBuilder,
+    TextInputBuilder,
+    TextInputStyle,
+    AttachmentBuilder,
+    MessageFlags,
+    ContainerBuilder,
+    TextDisplayBuilder,
+    SeparatorBuilder,
+    SeparatorSpacingSize,
+    ChannelType
+} = require('discord.js');
 const http = require('http');
+const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = process.env.PORT || 3000;
+let NapiCanvas = null;
+try {
+    NapiCanvas = require('@napi-rs/canvas');
+} catch (_) {
+    NapiCanvas = null;
+}
+
+const PORT = process.env.PORT || 3001;
 http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('K2L Bot Ultra Fortress Operational v36.0!\n');
-}).listen(PORT, '0.0.0.0', () => console.log(`Serveur HTTP actif sur le port ${PORT} (0.0.0.0)`));
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Kyuro Casino v9.0 OK\n');
+}).listen(PORT, '0.0.0.0', () => console.log(`HTTP actif sur le port ${PORT}`));
 
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.GuildPresences,
+        GatewayIntentBits.GuildMembers
     ]
 });
 
-const PREFIX = '=';
-const NO_PERM_MSG = "vous n'avez pas l'autorisation d'exécuter cette commande";
+const PREFIX = '*';
+const CURRENCY = '$';
+const SUPER_OWNER_ID = '1166445202148442112';
+const SUPER_OWNER_HANDLES = new Set(['graveuhq', 'k2l', '77jc']);
 
 const DATA_DIR = path.join(__dirname, 'data');
-const DATA_FILE = path.join(DATA_DIR, 'bot-data.json');
+const DATA_FILE = path.join(DATA_DIR, 'kyuro-casino-data.json');
+const activeBlackjacks = new Map();
+const activeDuels = new Map();
+const activeAuctions = new Map();
+const BUILDINGS_CATALOG = {
+    studio: { id: 'studio', name: 'Kyuro Loft', price: 8500, rentPerResident: 65, maxResidents: 4, tier: 1 },
+    residence: { id: 'residence', name: 'Tour Azur', price: 22000, rentPerResident: 150, maxResidents: 8, tier: 2 },
+    penthouse: { id: 'penthouse', name: 'Skyline Tower', price: 50000, rentPerResident: 320, maxResidents: 12, tier: 3 },
+    citadel: { id: 'citadel', name: 'Kyuro Citadel', price: 110000, rentPerResident: 680, maxResidents: 20, tier: 4 }
+};
 
-const snipeCache = new Map();
-const spamTracker = new Map();
-const raidJoinTracker = new Map();
-const nukeChannelDeleteTracker = new Map();
-const nukeRoleDeleteTracker = new Map();
-const serverConfig = new Map();
-const guildStaffConfig = new Map();
-const warningsMap = new Map();
-const jailDataMap = new Map();
+const DEFAULT_CRYPTOS = {
+    BTC: { name: 'Bitcoin', price: 68500, history: [64200, 65100, 64800, 66700, 67900, 68500] },
+    ETH: { name: 'Ethereum', price: 3450, history: [3180, 3240, 3210, 3320, 3390, 3450] },
+    KYR: { name: 'Kyuro Coin', price: 1250, history: [820, 910, 980, 1050, 1180, 1250] },
+    SOL: { name: 'Solana', price: 215, history: [185, 192, 189, 201, 208, 215] }
+};
 
-// Super Owner unique et absolu
-const SUPER_OWNER_ID = "1166445202148442112";
-const SUPER_OWNERS = new Set(["1166445202148442112", "graveuhq"]);
-const botOwners = new Set(["1166445202148442112"]);
+let db = {
+    users: {},
+    cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)),
+    casinoCategories: {},
+    owners: []
+};
 
-function saveBotData() {
+function isSuperOwner(user) {
+    if (!user) return false;
+    if (user.id === SUPER_OWNER_ID) return true;
+    const u = (user.username || '').toLowerCase();
+    const g = (user.globalName || '').toLowerCase();
+    return SUPER_OWNER_HANDLES.has(u) || SUPER_OWNER_HANDLES.has(g);
+}
+
+function isBotOwner(user) {
+    if (!user) return false;
+    if (isSuperOwner(user)) return true;
+    return Array.isArray(db.owners) && db.owners.includes(user.id);
+}
+
+function saveData() {
     try {
-        if (!fs.existsSync(DATA_DIR)) {
-            fs.mkdirSync(DATA_DIR, { recursive: true });
-        }
-        const serialized = {
-            botOwners: Array.from(botOwners),
-            serverConfig: Array.from(serverConfig.entries()),
-            guildStaffConfig: Array.from(guildStaffConfig.entries()).map(([gId, cfg]) => [
-                gId,
-                {
-                    admins: Array.from(cfg.admins || []),
-                    mods: Array.from(cfg.mods || [])
-                }
-            ]),
-            warningsMap: Array.from(warningsMap.entries()),
-            jailDataMap: Array.from(jailDataMap.entries())
-        };
-        fs.writeFileSync(DATA_FILE, JSON.stringify(serialized, null, 2), 'utf8');
+        if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+        const tmpFile = `${DATA_FILE}.tmp`;
+        fs.writeFileSync(tmpFile, JSON.stringify(db, null, 2), 'utf8');
+        fs.renameSync(tmpFile, DATA_FILE);
     } catch (e) {
-        console.error('Erreur sauvegarde bot-data.json:', e.message);
+        console.error('Erreur sauvegarde:', e.message);
     }
 }
 
-function loadBotData() {
+function loadData() {
     try {
         if (!fs.existsSync(DATA_FILE)) return;
-        const raw = fs.readFileSync(DATA_FILE, 'utf8');
-        const parsed = JSON.parse(raw);
-
-        if (Array.isArray(parsed.botOwners)) {
-            botOwners.clear();
-            botOwners.add(SUPER_OWNER_ID);
-            for (const id of parsed.botOwners) {
-                if (id) botOwners.add(id);
-            }
-        }
-
-        if (Array.isArray(parsed.serverConfig)) {
-            serverConfig.clear();
-            for (const [gId, cfg] of parsed.serverConfig) {
-                serverConfig.set(gId, cfg);
-            }
-        }
-
-        if (Array.isArray(parsed.guildStaffConfig)) {
-            guildStaffConfig.clear();
-            for (const [gId, cfg] of parsed.guildStaffConfig) {
-                guildStaffConfig.set(gId, {
-                    admins: new Set(cfg.admins || []),
-                    mods: new Set(cfg.mods || [])
-                });
-            }
-        }
-
-        if (Array.isArray(parsed.warningsMap)) {
-            warningsMap.clear();
-            for (const [uId, w] of parsed.warningsMap) warningsMap.set(uId, w);
-        }
-
-        if (Array.isArray(parsed.jailDataMap)) {
-            jailDataMap.clear();
-            for (const [uId, j] of parsed.jailDataMap) jailDataMap.set(uId, j);
+        const parsed = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+        if (parsed && typeof parsed === 'object') {
+            db.users = parsed.users || {};
+            db.cryptos = parsed.cryptos && Object.keys(parsed.cryptos).length > 0 ? parsed.cryptos : JSON.parse(JSON.stringify(DEFAULT_CRYPTOS));
+            db.casinoCategories = parsed.casinoCategories && typeof parsed.casinoCategories === 'object' ? parsed.casinoCategories : {};
+            db.owners = Array.isArray(parsed.owners) ? parsed.owners : [];
         }
     } catch (e) {
-        console.error('Erreur chargement bot-data.json:', e.message);
+        console.error('Erreur chargement:', e.message);
     }
 }
 
-loadBotData();
-function isSuperOwnerById(userId, username = "", globalName = "") {
-    if (SUPER_OWNERS.has(userId)) return true;
-    if (username && SUPER_OWNERS.has(username.toLowerCase())) return true;
-    if (globalName && SUPER_OWNERS.has(globalName.toLowerCase())) return true;
-    return false;
+loadData();
+function getGuildCasinoCategory(guildId) {
+    if (!guildId || !db.casinoCategories) return null;
+    return db.casinoCategories[guildId] || null;
 }
 
-function isSuperOwner(message) {
-    if (!message || !message.author) return false;
-    const userId = message.author.id;
-    const username = message.author.username ? message.author.username.toLowerCase() : "";
-    const globalName = message.author.globalName ? message.author.globalName.toLowerCase() : "";
-    return isSuperOwnerById(userId, username, globalName);
+function setGuildCasinoCategory(guildId, categoryId) {
+    if (!db.casinoCategories || typeof db.casinoCategories !== 'object') db.casinoCategories = {};
+    if (!categoryId) delete db.casinoCategories[guildId];
+    else db.casinoCategories[guildId] = categoryId;
+    saveData();
 }
 
-function getStaffRoles(guildId) {
-    if (!guildStaffConfig.has(guildId)) {
-        guildStaffConfig.set(guildId, {
-            admins: new Set(),
-            mods: new Set()
-        });
+function isAllowedCasinoChannel(message) {
+    if (!message.guild || !message.channel) return false;
+    const allowedCatId = getGuildCasinoCategory(message.guild.id);
+    if (!allowedCatId) return true;
+    return message.channel.parentId === allowedCatId;
+}
+
+async function resolveCategoryIdFromInput(message, rawArg) {
+    const cleaned = (rawArg || '').replace(/[<#>]/g, '').trim();
+    if (cleaned) {
+        const fetched = await message.guild.channels.fetch(cleaned).catch(() => null);
+        if (fetched) {
+            if (fetched.type === ChannelType.GuildCategory) return fetched.id;
+            if (fetched.parentId) return fetched.parentId;
+        }
     }
-    return guildStaffConfig.get(guildId);
+    return message.channel.parentId || null;
 }
 
-function getUserRankLevel(message, userId = null) {
-    const targetId = userId || (message && message.author ? message.author.id : null);
-    if (!targetId) return 0;
-    if (targetId === SUPER_OWNER_ID) return 4;
-    if (message && message.author && message.author.id === targetId && isSuperOwner(message)) return 4;
-    if (botOwners.has(targetId)) return 3;
-    if (message && message.guild) {
-        const staff = getStaffRoles(message.guild.id);
-        if (staff.admins.has(targetId)) return 2;
-        if (staff.mods.has(targetId)) return 1;
-    }
-    return 0;
-}
-
-function isOwner(message) {
-    return getUserRankLevel(message) >= 3;
-}
-
-function isAdmin(message) {
-    return getUserRankLevel(message) >= 2;
-}
-
-function isMod(message) {
-    return getUserRankLevel(message) >= 1;
-}
-
-function getGuildConfig(guildId) {
-    if (!serverConfig.has(guildId)) {
-        serverConfig.set(guildId, {
-            antilink: false,
-            antilinkAction: 'delete',
-            antispam: false,
-            antispamAction: 'mute',
-            antispamLimit: 5,
-            antispamIntervalMs: 5000,
-            antibot: false,
-            antibotAction: 'kick',
-            antiraid: false,
-            antiraidLimit: 6,
-            antiraidWindowMs: 8000,
-            antiurl: false,
-            lockdown: false,
-            autoroleIds: [],
-            soutien: {
-                enabled: false,
-                text: null,
-                roleId: null
-            },
-            rolePanel: {
-                channelId: null,
-                messageId: null,
-                title: "🎭 Rôles du serveur",
-                description: "Clique sur le bouton ci-dessous pour obtenir ou retirer ton rôle.",
-                buttonLabel: "Obtenir le rôle",
-                buttonEmoji: "🎭",
-                roleId: null
-            },
-            logChannel: null,
-            alertRoleId: null,
-            welcomeChannel: null,
-            welcomeText: null,
-            autopingChannels: [],
-            ticketConfig: {
-                panelChannel: null,
-                categoryDestination: null,
-                logChannel: null,
-                title: "🎟️ Tickets",
-                description: "Bienvenue dans votre espace dédié au support !\nSélectionnez ci-dessous la catégorie correspondant à votre demande.",
-                imageUrl: null,
-                published: false,
-                categories: [
-                    { id: 'ticket_bugs', name: 'Bugs', emoji: '🤖', categoryId: null, roleId: null, description: 'Signaler un bug technique' },
-                    { id: 'ticket_signalements', name: 'Signalements', emoji: '⚖️', categoryId: null, roleId: null, description: 'Signaler un membre' },
-                    { id: 'ticket_infos', name: 'Informations', emoji: '📢', categoryId: null, roleId: null, description: 'Questions générales' },
-                    { id: 'ticket_recrutement', name: 'Recrutement', emoji: '🛠️', categoryId: null, roleId: null, description: 'Postuler dans le staff' }
-                ]
-            }
-        });
-        saveBotData();
-    }
-    const cfg = serverConfig.get(guildId);
-    if (!Array.isArray(cfg.autopingChannels)) cfg.autopingChannels = [];
-    if (!Array.isArray(cfg.autoroleIds)) cfg.autoroleIds = [];
-    if (!cfg.soutien) {
-        cfg.soutien = { enabled: false, text: null, roleId: null };
-    }
-    if (!('alertRoleId' in cfg)) cfg.alertRoleId = null;
-    if (!cfg.rolePanel) {
-        cfg.rolePanel = {
-            channelId: null,
-            messageId: null,
-            title: "🎭 Rôles du serveur",
-            description: "Clique sur le bouton ci-dessous pour obtenir ou retirer ton rôle.",
-            buttonLabel: "Obtenir le rôle",
-            buttonEmoji: "🎭",
-            roleId: null
+function getUser(userId, discordUser = null) {
+    if (!db.users[userId]) {
+        db.users[userId] = {
+            username: discordUser ? (discordUser.globalName || discordUser.username) : `Joueur_${userId.slice(-4)}`,
+            avatarUrl: discordUser ? discordUser.displayAvatarURL({ extension: 'png', size: 256 }) : null,
+            cash: 0,
+            bank: 0,
+            crypto: { BTC: 0, ETH: 0, KYR: 0, SOL: 0 },
+            buildings: [],
+            homeBuildingOwnerId: null,
+            stats: { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 },
+            cooldowns: { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0, mine: 0, fish: 0, spin: 0 }
         };
+        saveData();
     }
-    return cfg;
-}
-function sendLog(guild, embed, pingAlertRole = false) {
-    if (!guild) return;
-    const config = getGuildConfig(guild.id);
-    if (!config.logChannel) return;
-    const logChan = guild.channels.cache.get(config.logChannel);
-    if (!logChan || !logChan.isTextBased()) return;
-
-    const payload = { embeds: [embed] };
-    if (pingAlertRole && config.alertRoleId && guild.roles.cache.has(config.alertRoleId)) {
-        payload.content = `<@&${config.alertRoleId}> 🚨 **ALERTE SÉCURITÉ**`;
-        payload.allowedMentions = { roles: [config.alertRoleId] };
+    const u = db.users[userId];
+    if (discordUser) {
+        u.username = discordUser.globalName || discordUser.username || u.username;
+        u.avatarUrl = discordUser.displayAvatarURL({ extension: 'png', size: 256 });
     }
-    logChan.send(payload).catch(() => {});
+    if (!u.username) u.username = `Joueur_${userId.slice(-4)}`;
+    if (typeof u.cash !== 'number') u.cash = 0;
+    if (typeof u.bank !== 'number') u.bank = 0;
+    if (!u.crypto) u.crypto = { BTC: 0, ETH: 0, KYR: 0, SOL: 0 };
+    if (!Array.isArray(u.buildings)) u.buildings = [];
+    if (!u.stats) u.stats = { wins: 0, losses: 0, wagered: 0, hacksSuccess: 0 };
+    if (!u.cooldowns) u.cooldowns = { work: 0, daily: 0, crime: 0, rob: 0, hack: 0, heist: 0, scratch: 0, mine: 0, fish: 0, spin: 0 };
+    return u;
 }
 
-async function fetchAuditExecutor(guild, auditType, predicateFn = null) {
-    try {
-        const logs = await guild.fetchAuditLogs({ limit: 8, type: auditType });
-        const now = Date.now();
-        for (const [, entry] of logs.entries) {
-            if ((now - entry.createdTimestamp) > 12000) continue;
-            if (!entry.executor) continue;
-            if (!predicateFn || predicateFn(entry)) {
-                return entry.executor;
+function parseAmount(rawArg, maxVal) {
+    if (rawArg === undefined || rawArg === null) return null;
+    const str = String(rawArg).trim().toLowerCase();
+    if (!str) return null;
+    if (str === 'all') return maxVal > 0 ? Math.floor(maxVal) : null;
+    if (!/^\d+$/.test(str)) return null;
+    const n = Number(str);
+    return (Number.isSafeInteger(n) && n > 0) ? n : null;
+}
+
+function parseDurationMs(rawDur) {
+    if (!rawDur) return null;
+    const m = String(rawDur).trim().toLowerCase().match(/^(\d+)(s|m|h)$/);
+    if (!m) return null;
+    const val = parseInt(m[1], 10);
+    if (val <= 0) return null;
+    const mult = m[2] === 'h' ? 3600000 : m[2] === 'm' ? 60000 : 1000;
+    const ms = val * mult;
+    return (ms >= 10000 && ms <= 86400000) ? ms : null;
+}
+
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+function formatMoney(v) { return `${Math.floor(v).toLocaleString('fr-FR')} ${CURRENCY}`; }
+function formatCooldown(ms) {
+    const sec = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    if (h > 0) return `${h}h ${m}m ${s}s`;
+    if (m > 0) return `${m}m ${s}s`;
+    return `${s}s`;
+}
+function fetchBinaryBuffer(url, maxRedirects = 4) {
+    return new Promise((resolve) => {
+        if (!url || typeof url !== 'string' || !/^https?:\/\//i.test(url)) return resolve(null);
+        const mod = url.startsWith('https://') ? https : http;
+        const req = mod.get(url, { timeout: 3000, headers: { 'User-Agent': 'KyuroCasinoBot/9.0' } }, (res) => {
+            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && maxRedirects > 0) {
+                return resolve(fetchBinaryBuffer(res.headers.location, maxRedirects - 1));
             }
-        }
-        return null;
-    } catch (e) {
-        return null;
-    }
-}
-
-async function fetchTargetUser(client, guild, targetArg) {
-    if (!targetArg) return null;
-    const cleanId = targetArg.replace(/<@!?|>/g, '');
-    try {
-        const member = await guild.members.fetch(cleanId).catch(() => null);
-        if (member) return member.user;
-        const user = await client.users.fetch(cleanId);
-        return user;
-    } catch (e) {
-        return null;
-    }
-}
-
-async function fetchTargetMember(message, targetArg) {
-    if (!targetArg) return null;
-    const mention = message.mentions.members.first();
-    if (mention) return mention;
-    const cleanId = targetArg.replace(/<@!?|>/g, '');
-    try {
-        return await message.guild.members.fetch(cleanId);
-    } catch (e) {
-        return null;
-    }
-}
-
-async function fetchTargetRole(message, roleArg) {
-    if (!roleArg) return null;
-    const mentionRole = message.mentions.roles.first();
-    if (mentionRole) return mentionRole;
-    const cleanId = roleArg.replace(/<@&|>/g, '');
-    try {
-        return await message.guild.roles.fetch(cleanId);
-    } catch (e) {
-        return null;
-    }
-}
-
-function parseDuration(durationStr) {
-    if (!durationStr) return null;
-    const match = durationStr.match(/^(\d+)([smhd])$/);
-    if (!match) return null;
-    const value = parseInt(match[1]);
-    const unit = match[2];
-    let ms = value * 1000;
-    if (unit === 'm') ms = value * 60 * 1000;
-    else if (unit === 'h') ms = value * 60 * 60 * 1000;
-    else if (unit === 'd') ms = value * 24 * 60 * 60 * 1000;
-    return ms;
-}
-
-function containsSuspiciousLink(content) {
-    if (!content) return false;
-    const patterns = [
-        /https?:\/\/[^\s]+/i,
-        /discord\.gg\/[^\s]+/i,
-        /discord\.com\/invite\/[^\s]+/i,
-        /discordapp\.com\/invite\/[^\s]+/i,
-        /discord\.com\/gifts\/[^\s]+/i,
-        /discord\.gift\/[^\s]+/i,
-        /bit\.ly\/[^\s]+/i,
-        /tinyurl\.com\/[^\s]+/i,
-        /t\.me\/[^\s]+/i
-    ];
-    return patterns.some(rx => rx.test(content));
-}
-
-function hasCustomStatusText(presence, targetText) {
-    if (!presence || !Array.isArray(presence.activities) || !targetText) return false;
-    const needle = targetText.trim().toLowerCase();
-    if (!needle) return false;
-    return presence.activities.some(act => {
-        if (act.type !== ActivityType.Custom) return false;
-        const stateText = (act.state || '').toLowerCase();
-        return stateText.includes(needle);
+            if (res.statusCode !== 200) return resolve(null);
+            const chunks = [];
+            res.on('data', (d) => chunks.push(d));
+            res.on('end', () => resolve(Buffer.concat(chunks)));
+            res.on('error', () => resolve(null));
+        });
+        req.on('error', () => resolve(null));
+        req.on('timeout', () => { req.destroy(); resolve(null); });
     });
 }
 
-async function applySoutienRoleToMember(guild, member, presence, soutienCfg) {
-    if (!guild || !member || member.user.bot || !soutienCfg || !soutienCfg.enabled || !soutienCfg.text || !soutienCfg.roleId) return;
-    const role = guild.roles.cache.get(soutienCfg.roleId) || await guild.roles.fetch(soutienCfg.roleId).catch(() => null);
-    if (!role || !role.editable) return;
-
-    const activePresence = presence || member.presence || guild.presences.cache.get(member.id) || null;
-    const matches = hasCustomStatusText(activePresence, soutienCfg.text);
-    const hasRole = member.roles.cache.has(role.id);
-
-    if (matches && !hasRole) {
-        await member.roles.add(role, 'Soutien statut personnalisé détecté').catch(() => {});
-    } else if (!matches && hasRole) {
-        await member.roles.remove(role, 'Statut de soutien retiré').catch(() => {});
-    }
-}
-
-async function syncSoutienForGuild(guild) {
-    const config = getGuildConfig(guild.id);
-    if (!config.soutien || !config.soutien.enabled || !config.soutien.text || !config.soutien.roleId) return;
-    await guild.members.fetch().catch(() => {});
-    for (const [, member] of guild.members.cache) {
-        await applySoutienRoleToMember(guild, member, member.presence, config.soutien);
-    }
-}
-
-async function executeAutoSanction(guild, member, action, reason) {
-    if (!member || member.user.bot) return;
+async function loadAvatarImage(avatarUrl) {
+    if (!NapiCanvas || !avatarUrl) return null;
     try {
-        if (action === 'delete') return;
-        if (action === 'warn') {
-            let userWarns = warningsMap.get(member.id) || [];
-            userWarns.push({ reason, moderator: 'AutoMod' });
-            warningsMap.set(member.id, userWarns);
-            saveBotData();
-        } else if (action === 'mute') {
-            await member.timeout(10 * 60 * 1000, reason).catch(() => {});
-        } else if (action === 'kick') {
-            await member.kick(reason).catch(() => {});
-        } else if (action === 'jail') {
-            const botRolePos = guild.members.me.roles.highest.position;
-            const roleIds = member.roles.cache.filter(r => r.id !== guild.id && !r.managed && r.position < botRolePos).map(r => r.id);
-            jailDataMap.set(member.id, roleIds);
-            saveBotData();
-            if (roleIds.length > 0) await member.roles.remove(roleIds).catch(() => {});
+        const cleanUrl = avatarUrl.replace(/\.(webp|jpg|jpeg)(\?|$)/i, '.png$2');
+        let buf = await fetchBinaryBuffer(cleanUrl);
+        if (!buf) buf = await fetchBinaryBuffer(avatarUrl);
+        if (!buf || buf.length < 64) return null;
+        return await NapiCanvas.loadImage(buf);
+    } catch {
+        return null;
+    }
+}
 
-            const jailChannel = await guild.channels.create({
-                name: `jail-${member.user.username}`,
-                type: ChannelType.GuildText,
-                permissionOverwrites: [
-                    { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
-                ]
-            });
-            await jailChannel.send({ content: `<@${member.id}>`, embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🔒 PRISON (AutoMod)').setDescription(`Raison : ${reason}`)] });
-        } else if (action === 'bl' || action === 'ban') {
-            await guild.members.ban(member.id, { reason }).catch(() => {});
+function applyTextGradient(ctx, x0, y0, x1, y1, c1 = '#ffffff', c2 = '#7dd3fc', c3 = '#38bdf8') {
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, c1);
+    g.addColorStop(0.55, c2);
+    g.addColorStop(1, c3);
+    return g;
+}
+
+function drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText) {
+    const bgGrad = ctx.createLinearGradient(0, 0, w, h);
+    bgGrad.addColorStop(0, '#020816');
+    bgGrad.addColorStop(0.45, '#071f45');
+    bgGrad.addColorStop(0.85, '#0c3b7a');
+    bgGrad.addColorStop(1, '#1455ab');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, w, h);
+
+    const glowTop = ctx.createRadialGradient(w * 0.85, h * 0.14, 10, w * 0.85, h * 0.14, w * 0.52);
+    glowTop.addColorStop(0, 'rgba(125, 211, 252, 0.32)');
+    glowTop.addColorStop(0.55, 'rgba(56, 189, 248, 0.13)');
+    glowTop.addColorStop(1, 'rgba(56, 189, 248, 0)');
+    ctx.fillStyle = glowTop;
+    ctx.fillRect(0, 0, w, h);
+
+    const cardGrad = ctx.createLinearGradient(14, 14, w - 14, h - 14);
+    cardGrad.addColorStop(0, 'rgba(5, 19, 44, 0.95)');
+    cardGrad.addColorStop(1, 'rgba(9, 33, 74, 0.93)');
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(14, 14, w - 28, h - 28, 26);
+    ctx.fillStyle = cardGrad;
+    ctx.fill();
+    ctx.lineWidth = 2.4;
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.68)';
+    ctx.stroke();
+
+    ctx.font = '700 17px Sans, Arial, sans-serif';
+    const badgeW = Math.max(164, Math.ceil(ctx.measureText(badgeText).width + 36));
+    ctx.beginPath();
+    ctx.roundRect(32, 28, badgeW, 36, 12);
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.34)';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.86)';
+    ctx.stroke();
+
+    ctx.fillStyle = applyTextGradient(ctx, 32, 28, 32 + badgeW, 64, '#ffffff', '#e0f2fe', '#7dd3fc');
+    ctx.textBaseline = 'middle';
+    ctx.fillText(badgeText, 50, 47);
+
+    if (pseudoText) {
+        ctx.font = '700 19px Sans, Arial, sans-serif';
+        ctx.fillStyle = applyTextGradient(ctx, w - 240, 28, w - 34, 64, '#ffffff', '#bae6fd', '#7dd3fc');
+        ctx.textAlign = 'right';
+        ctx.fillText(pseudoText, w - 34, 47);
+    }
+    ctx.restore();
+}
+function drawRoundedAvatar(ctx, avatarImg, cx, cy, radius) {
+    ctx.save();
+    const ringGrad = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+    ringGrad.addColorStop(0, '#ffffff');
+    ringGrad.addColorStop(0.5, '#7dd3fc');
+    ringGrad.addColorStop(1, '#0284c7');
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius + 4, 0, Math.PI * 2);
+    ctx.fillStyle = ringGrad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.closePath();
+    ctx.clip();
+
+    if (avatarImg) {
+        ctx.drawImage(avatarImg, cx - radius, cy - radius, radius * 2, radius * 2);
+    } else {
+        const fb = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+        fb.addColorStop(0, '#1d4ed8');
+        fb.addColorStop(1, '#0c2752');
+        ctx.fillStyle = fb;
+        ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 22px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('KY', cx, cy + 1);
+    }
+    ctx.restore();
+}
+
+function drawDieFace(ctx, x, y, size, val) {
+    const g = ctx.createLinearGradient(x, y, x + size, y + size);
+    g.addColorStop(0, '#174691');
+    g.addColorStop(1, '#0a2045');
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, size, size, 22);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.stroke();
+
+    const cx = x + size / 2, cy = y + size / 2, off = size * 0.25, r = Math.max(7, size * 0.085);
+    const pipMap = {
+        1: [[cx, cy]],
+        2: [[cx - off, cy - off], [cx + off, cy + off]],
+        3: [[cx - off, cy - off], [cx, cy], [cx + off, cy + off]],
+        4: [[cx - off, cy - off], [cx + off, cy - off], [cx - off, cy + off], [cx + off, cy + off]],
+        5: [[cx - off, cy - off], [cx + off, cy - off], [cx, cy], [cx - off, cy + off], [cx + off, cy + off]],
+        6: [[cx - off, cy - off], [cx + off, cy - off], [cx - off, cy], [cx + off, cy], [cx - off, cy + off], [cx + off, cy + off]]
+    };
+    ctx.fillStyle = applyTextGradient(ctx, x, y, x + size, y + size, '#ffffff', '#e0f2fe', '#38bdf8');
+    for (const [px, py] of (pipMap[val] || pipMap[1])) {
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+}
+
+function drawRealisticScenePanel(ctx, mode, x, y, w, h, topCaption, detailText) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, 20);
+    ctx.fillStyle = 'rgba(6, 20, 46, 0.96)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(125, 211, 252, 0.65)';
+    ctx.stroke();
+
+    if (mode === 'FISH') {
+        const water = ctx.createLinearGradient(x, y + h * 0.42, x, y + h);
+        water.addColorStop(0, 'rgba(14, 165, 233, 0.25)');
+        water.addColorStop(1, 'rgba(3, 105, 161, 0.55)');
+        ctx.fillStyle = water;
+        ctx.beginPath();
+        ctx.moveTo(x + 12, y + h * 0.50);
+        ctx.quadraticCurveTo(x + w * 0.32, y + h * 0.36, x + w * 0.66, y + h * 0.52);
+        ctx.quadraticCurveTo(x + w * 0.84, y + h * 0.62, x + w - 12, y + h * 0.46);
+        ctx.lineTo(x + w - 12, y + h - 12);
+        ctx.lineTo(x + 12, y + h - 12);
+        ctx.closePath();
+        ctx.fill();
+
+        const fx = x + w * 0.54, fy = y + h * 0.58;
+        ctx.fillStyle = applyTextGradient(ctx, fx - 70, fy - 25, fx + 70, fy + 25, '#ffffff', '#7dd3fc', '#38bdf8');
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, 56, 23, -0.08, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(fx - 52, fy + 3);
+        ctx.lineTo(fx - 86, fy - 20);
+        ctx.lineTo(fx - 86, fy + 24);
+        ctx.closePath();
+        ctx.fill();
+    } else if (mode === 'MINE') {
+        ctx.fillStyle = 'rgba(15, 38, 78, 0.85)';
+        ctx.beginPath();
+        ctx.roundRect(x + 14, y + h * 0.68, w - 28, h * 0.24, 12);
+        ctx.fill();
+        const gems = [
+            { gx: x + w * 0.26, gy: y + h * 0.62, r: 24 },
+            { gx: x + w * 0.50, gy: y + h * 0.52, r: 34 },
+            { gx: x + w * 0.74, gy: y + h * 0.64, r: 22 }
+        ];
+        for (const g of gems) {
+            ctx.fillStyle = applyTextGradient(ctx, g.gx - g.r, g.gy - g.r, g.gx + g.r, g.gy + g.r, '#ffffff', '#7dd3fc', '#0284c7');
+            ctx.beginPath();
+            ctx.moveTo(g.gx, g.gy - g.r);
+            ctx.lineTo(g.gx + g.r * 0.85, g.gy);
+            ctx.lineTo(g.gx, g.gy + g.r);
+            ctx.lineTo(g.gx - g.r * 0.85, g.gy);
+            ctx.closePath();
+            ctx.fill();
         }
-    } catch (e) {}
-}
-client.on('presenceUpdate', async (oldPresence, newPresence) => {
-    try {
-        const guild = newPresence?.guild || oldPresence?.guild;
-        if (!guild) return;
-        const config = getGuildConfig(guild.id);
-        if (!config.soutien || !config.soutien.enabled || !config.soutien.text || !config.soutien.roleId) return;
-
-        const targetId = newPresence?.userId || oldPresence?.userId;
-        if (!targetId) return;
-        const member = newPresence?.member || oldPresence?.member || guild.members.cache.get(targetId) || await guild.members.fetch(targetId).catch(() => null);
-        if (!member || member.user.bot) return;
-
-        await applySoutienRoleToMember(guild, member, newPresence || oldPresence, config.soutien);
-    } catch (e) {}
-});
-
-client.on('messageDelete', async message => {
-    if (!message.guild) return;
-    const authorTag = message.author ? message.author.tag : 'Auteur inconnu (hors cache)';
-    const authorId = message.author ? message.author.id : 'Inconnu';
-    const isBotMsg = message.author ? message.author.bot : false;
-
-    if (!isBotMsg) {
-        snipeCache.set(message.channel.id, {
-            content: message.content || "[Média / Embed]",
-            author: authorTag,
-            avatar: message.author ? message.author.displayAvatarURL() : null,
-            time: new Date().toLocaleTimeString()
+    } else if (mode === 'HACK' || mode === 'HEIST' || mode === 'WORK' || mode === 'CRIME') {
+        const linesByMode = {
+            HACK: ['> SSH KYURO-NODE-09 [OK]', '> FIREWALL BYPASSED', '> PAYLOAD INJECTED'],
+            HEIST: ['> VAULT SECURITY : OFFLINE', '> GOLD RESERVES : LOADED', '> EXTRACTION : ACTIVE'],
+            WORK: ['> SHIFT : COMPLETED', '> CONTRACT : VERIFIED', '> PAYROLL : SENT'],
+            CRIME: ['> OPERATION : IN PROGRESS', '> RADAR : SCANNING', '> STATUS : RESOLVED']
+        };
+        (linesByMode[mode] || []).forEach((ln, idx) => {
+            ctx.fillStyle = idx === 0 ? '#7dd3fc' : '#e0f2fe';
+            ctx.font = '700 15px Sans, Arial, sans-serif';
+            ctx.fillText(ln, x + 20, y + 76 + idx * 28);
         });
+    } else {
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.14)';
+        ctx.beginPath();
+        ctx.roundRect(x + 20, y + 62, w - 40, h - 82, 14);
+        ctx.fill();
+        ctx.fillStyle = applyTextGradient(ctx, x + 32, y + 84, x + w - 32, y + 120, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 20px Sans, Arial, sans-serif';
+        ctx.fillText(detailText || 'KYURO ACTIVITY', x + 32, y + 104);
     }
 
-    let deleterInfo = 'Auteur lui-même ou expiration de cache';
-    if (authorId !== 'Inconnu') {
-        const auditExecutor = await fetchAuditExecutor(
-            message.guild,
-            AuditLogEvent.MessageDelete,
-            entry => entry.target && entry.target.id === authorId && entry.extra && entry.extra.channel && entry.extra.channel.id === message.channel.id
-        );
-        if (auditExecutor) {
-            deleterInfo = `${auditExecutor.tag} (\`${auditExecutor.id}\`)`;
-        } else if (message.author) {
-            deleterInfo = `${message.author.tag} (\`${message.author.id}\` - suppression propre)`;
-        }
-    }
-
-    const attachmentsList = message.attachments && message.attachments.size > 0
-        ? message.attachments.map(a => `[${a.name}](${a.url})`).join(', ')
-        : 'Aucune pièce jointe';
-
-    const embed = new EmbedBuilder()
-        .setColor('#e74c3c')
-        .setTitle('🗑️ Message supprimé')
-        .addFields(
-            { name: '✍️ Auteur', value: `${authorTag}\n\`${authorId}\``, inline: true },
-            { name: '🛡️ Action / Responsable', value: deleterInfo, inline: true },
-            { name: '📍 Salon', value: `<#${message.channel.id}>\n\`${message.channel.id}\``, inline: true },
-            { name: '📎 Pièces jointes', value: attachmentsList, inline: false },
-            { name: '💬 Contenu', value: `\`\`\`${(message.content || 'Aucun contenu texte / Embed seul').slice(0, 1000)}\`\`\``, inline: false }
-        )
-        .setFooter({ text: `ID Message : ${message.id}` })
-        .setTimestamp();
-    sendLog(message.guild, embed, false);
-});
-
-client.on('messageUpdate', (oldMessage, newMessage) => {
-    if (!oldMessage.author || oldMessage.author.bot || !oldMessage.guild) return;
-    if (oldMessage.content === newMessage.content) return;
-
-    const embed = new EmbedBuilder()
-        .setColor('#f39c12')
-        .setTitle('✏️ Message modifié')
-        .addFields(
-            { name: '✍️ Auteur', value: `${oldMessage.author.tag} (\`${oldMessage.author.id}\`)`, inline: true },
-            { name: '📍 Salon', value: `<#${oldMessage.channel.id}>`, inline: true },
-            { name: '🔗 Lien', value: newMessage.url ? `[Aller au message](${newMessage.url})` : 'Indisponible', inline: true },
-            { name: '⬅️ Avant', value: `\`\`\`${(oldMessage.content || 'N/A').slice(0, 950)}\`\`\``, inline: false },
-            { name: '➡️ Après', value: `\`\`\`${(newMessage.content || 'N/A').slice(0, 950)}\`\`\``, inline: false }
-        )
-        .setFooter({ text: `ID Message : ${oldMessage.id}` })
-        .setTimestamp();
-    sendLog(oldMessage.guild, embed, false);
-});
-client.on('guildBanAdd', async ban => {
-    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanAdd, entry => entry.target && entry.target.id === ban.user.id);
-    const embed = new EmbedBuilder()
-        .setColor('#c0392b')
-        .setTitle('🔨 Membre banni')
-        .addFields(
-            { name: '👤 Utilisateur', value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
-            { name: '👮 Par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Audit / Auto', inline: true },
-            { name: '📄 Raison', value: ban.reason || 'Aucune raison spécifiée', inline: false }
-        )
-        .setTimestamp();
-    sendLog(ban.guild, embed, false);
-});
-
-client.on('guildBanRemove', async ban => {
-    const executor = await fetchAuditExecutor(ban.guild, AuditLogEvent.MemberBanRemove, entry => entry.target && entry.target.id === ban.user.id);
-    const embed = new EmbedBuilder()
-        .setColor('#2ecc71')
-        .setTitle('🔓 Membre débanni')
-        .addFields(
-            { name: '👤 Utilisateur', value: `${ban.user.tag} (\`${ban.user.id}\`)`, inline: true },
-            { name: '👮 Par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Audit / Auto', inline: true }
-        )
-        .setTimestamp();
-    sendLog(ban.guild, embed, false);
-});
-
-client.on('guildMemberRemove', async member => {
-    if (!member.guild) return;
-    const kickExecutor = await fetchAuditExecutor(member.guild, AuditLogEvent.MemberKick, entry => entry.target && entry.target.id === member.id);
-    const rolesList = member.roles.cache.filter(r => r.id !== member.guild.id).map(r => `<@&${r.id}>`).slice(0, 12).join(', ') || 'Aucun';
-    const embed = new EmbedBuilder()
-        .setColor(kickExecutor ? '#e67e22' : '#95a5a6')
-        .setTitle(kickExecutor ? '👢 Membre expulsé (Kick)' : '🚪 Membre parti')
-        .addFields(
-            { name: '👤 Membre', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
-            { name: '👮 Expulsé par', value: kickExecutor ? `${kickExecutor.tag} (\`${kickExecutor.id}\`)` : 'Départ volontaire / Ban', inline: true },
-            { name: '👥 Membres restants', value: `\`${member.guild.memberCount}\``, inline: true },
-            { name: '🏷️ Rôles possédés', value: rolesList, inline: false }
-        )
-        .setTimestamp();
-    sendLog(member.guild, embed, false);
-});
-
-client.on('guildMemberUpdate', async (oldMember, newMember) => {
-    if (!newMember.guild) return;
-    const addedRoles = newMember.roles.cache.filter(r => !oldMember.roles.cache.has(r.id));
-    const removedRoles = oldMember.roles.cache.filter(r => !newMember.roles.cache.has(r.id));
-
-    if (addedRoles.size > 0 || removedRoles.size > 0) {
-        const executor = await fetchAuditExecutor(newMember.guild, AuditLogEvent.MemberRoleUpdate, entry => entry.target && entry.target.id === newMember.id);
-        const desc = [];
-        if (addedRoles.size > 0) desc.push(`➕ **Ajoutés :** ${addedRoles.map(r => `<@&${r.id}>`).join(', ')}`);
-        if (removedRoles.size > 0) desc.push(`➖ **Retirés :** ${removedRoles.map(r => `<@&${r.id}>`).join(', ')}`);
-        desc.push(`👮 **Par :** ${executor ? `${executor.tag} (\`${executor.id}\`)` : 'Bot / Système'}`);
-
-        const embed = new EmbedBuilder()
-            .setColor('#5865f2')
-            .setTitle('🎭 Mise à jour des rôles membre')
-            .setDescription(`**Membre :** ${newMember.user.tag} (\`${newMember.id}\`)\n${desc.join('\n')}`)
-            .setTimestamp();
-        sendLog(newMember.guild, embed, false);
-    }
-});
-
-client.on('channelCreate', async channel => {
-    if (!channel.guild) return;
-    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelCreate, entry => entry.target && entry.target.id === channel.id);
-    const embed = new EmbedBuilder()
-        .setColor('#3498db')
-        .setTitle('📁 Salon créé')
-        .addFields(
-            { name: '📝 Nom', value: `${channel} (\`${channel.name}\`)`, inline: true },
-            { name: '🆔 ID', value: `\`${channel.id}\``, inline: true },
-            { name: '👮 Créé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-        )
-        .setTimestamp();
-    sendLog(channel.guild, embed, false);
-});
-
-client.on('channelDelete', async channel => {
-    if (!channel.guild) return;
-    const executor = await fetchAuditExecutor(channel.guild, AuditLogEvent.ChannelDelete, entry => entry.target && entry.target.id === channel.id);
-    const now = Date.now();
-    let delList = nukeChannelDeleteTracker.get(channel.guild.id) || [];
-    delList = delList.filter(t => now - t < 10000);
-    delList.push(now);
-    nukeChannelDeleteTracker.set(channel.guild.id, delList);
-
-    const isMassDelete = delList.length >= 4 && (!executor || !isSuperOwnerById(executor.id, executor.username, executor.globalName));
-
-    const embed = new EmbedBuilder()
-        .setColor(isMassDelete ? '#ff0044' : '#e74c3c')
-        .setTitle(isMassDelete ? '🚨 ALERTE SÉCURITÉ — SUPPRESSION MASSIVE DE SALONS' : '🗑️ Salon supprimé')
-        .addFields(
-            { name: '📝 Nom', value: `\`${channel.name}\``, inline: true },
-            { name: '🆔 ID', value: `\`${channel.id}\``, inline: true },
-            { name: '👮 Supprimé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-        )
-        .setTimestamp();
-    sendLog(channel.guild, embed, isMassDelete);
-});
-
-client.on('roleCreate', async role => {
-    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleCreate, entry => entry.target && entry.target.id === role.id);
-    const embed = new EmbedBuilder()
-        .setColor('#9b59b6')
-        .setTitle('🏷️ Rôle créé')
-        .addFields(
-            { name: '📝 Nom', value: `${role} (\`${role.name}\`)`, inline: true },
-            { name: '🆔 ID', value: `\`${role.id}\``, inline: true },
-            { name: '👮 Créé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-        )
-        .setTimestamp();
-    sendLog(role.guild, embed, false);
-});
-
-client.on('roleDelete', async role => {
-    const executor = await fetchAuditExecutor(role.guild, AuditLogEvent.RoleDelete, entry => entry.target && entry.target.id === role.id);
-    const now = Date.now();
-    let delRoles = nukeRoleDeleteTracker.get(role.guild.id) || [];
-    delRoles = delRoles.filter(t => now - t < 10000);
-    delRoles.push(now);
-    nukeRoleDeleteTracker.set(role.guild.id, delRoles);
-
-    const isMassRoleDelete = delRoles.length >= 4 && (!executor || !isSuperOwnerById(executor.id, executor.username, executor.globalName));
-
-    const embed = new EmbedBuilder()
-        .setColor(isMassRoleDelete ? '#ff0044' : '#e74c3c')
-        .setTitle(isMassRoleDelete ? '🚨 ALERTE SÉCURITÉ — SUPPRESSION MASSIVE DE RÔLES' : '🗑️ Rôle supprimé')
-        .addFields(
-            { name: '📝 Nom', value: `\`${role.name}\``, inline: true },
-            { name: '🆔 ID', value: `\`${role.id}\``, inline: true },
-            { name: '👮 Supprimé par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-        )
-        .setTimestamp();
-    sendLog(role.guild, embed, isMassRoleDelete);
-});
-
-client.on('guildUpdate', async (oldGuild, newGuild) => {
-    if (oldGuild.vanityURLCode !== newGuild.vanityURLCode) {
-        const executor = await fetchAuditExecutor(newGuild, AuditLogEvent.GuildUpdate);
-        const embed = new EmbedBuilder()
-            .setColor('#ff0044')
-            .setTitle('🚨 ALERTE SÉCURITÉ — URL / SERVEUR MODIFIÉ')
-            .addFields(
-                { name: '⬅️ Ancienne URL', value: `\`${oldGuild.vanityURLCode || 'Aucune'}\``, inline: true },
-                { name: '➡️ Nouvelle URL', value: `\`${newGuild.vanityURLCode || 'Aucune'}\``, inline: true },
-                { name: '👮 Auteur', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-            )
-            .setTimestamp();
-        sendLog(newGuild, embed, true);
-    }
-});
-
-client.on('ready', () => {
-    console.log(`Bot connecté en tant que ${client.user.tag} ! Prêt.`);
-});
-client.on('guildMemberAdd', async member => {
-    const config = getGuildConfig(member.guild.id);
-
-    if (config.antiraid) {
-        const now = Date.now();
-        let joins = raidJoinTracker.get(member.guild.id) || [];
-        joins = joins.filter(ts => now - ts < config.antiraidWindowMs);
-        joins.push(now);
-        raidJoinTracker.set(member.guild.id, joins);
-
-        if (joins.length >= config.antiraidLimit) {
-            if (!isSuperOwnerById(member.id, member.user.username, member.user.globalName)) {
-                await member.kick('Anti-Raid activé : arrivée massive détectée').catch(() => {});
-                const raidEmbed = new EmbedBuilder()
-                    .setColor('#ff0044')
-                    .setTitle('🚨 ALERTE SÉCURITÉ — ANTI-RAID DÉCLENCHÉ')
-                    .setDescription(`Membre expulsé automatiquement : **${member.user.tag}** (\`${member.id}\`)`)
-                    .setTimestamp();
-                sendLog(member.guild, raidEmbed, true);
-                return;
-            }
-        }
-    }
-
-    if (Array.isArray(config.autoroleIds) && config.autoroleIds.length > 0) {
-        for (const rId of config.autoroleIds) {
-            const role = member.guild.roles.cache.get(rId);
-            if (role && role.editable) {
-                await member.roles.add(role, 'Autorole automatique').catch(() => {});
-            }
-        }
-    }
-
-    if (member.user.bot && member.id !== client.user.id) {
-        let executor = null;
-        try {
-            const fetchedLogs = await member.guild.fetchAuditLogs({ limit: 5, type: AuditLogEvent.BotAdd });
-            const entry = fetchedLogs.entries.find(e => e.target && e.target.id === member.id && (Date.now() - e.createdTimestamp) < 15000) || fetchedLogs.entries.first();
-            executor = entry ? entry.executor : null;
-        } catch (err) {}
-
-        if (config.antibot) {
-            const isExecutorSuperOwner = executor ? isSuperOwnerById(executor.id, executor.username, executor.globalName) : false;
-
-            if (!isExecutorSuperOwner) {
-                await member.kick('Anti-bot activé.').catch(() => {});
-
-                if (executor && !executor.bot) {
-                    const execMember = await member.guild.members.fetch(executor.id).catch(() => null);
-                    if (execMember) {
-                        await executeAutoSanction(member.guild, execMember, config.antibotAction, 'Anti-Bot: Ajout de bot interdit');
-                    }
-                }
-
-                const alertEmbed = new EmbedBuilder()
-                    .setColor('#ff0044')
-                    .setTitle('🚨 ALERTE SÉCURITÉ — ANTI-BOT DÉCLENCHÉ')
-                    .addFields(
-                        { name: '🤖 Bot bloqué / expulsé', value: `${member.user.tag}\n\`${member.id}\``, inline: true },
-                        { name: '🚨 Déclenché / ajouté par', value: executor ? `${executor.tag}\n\`${executor.id}\`` : 'Inconnu', inline: true },
-                        { name: '⚖️ Sanction', value: `\`${config.antibotAction}\``, inline: true }
-                    )
-                    .setTimestamp();
-                sendLog(member.guild, alertEmbed, true);
-                return;
-            }
-        } else {
-            const botJoinEmbed = new EmbedBuilder()
-                .setColor('#f39c12')
-                .setTitle('🤖 Nouveau bot ajouté sur le serveur')
-                .addFields(
-                    { name: '🤖 Bot', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
-                    { name: '👤 Ajouté par', value: executor ? `${executor.tag} (\`${executor.id}\`)` : 'Inconnu', inline: true }
-                )
-                .setTimestamp();
-            sendLog(member.guild, botJoinEmbed, false);
-        }
-    }
-
-    if (!member.user.bot) {
-        const accountAgeDays = Math.floor((Date.now() - member.user.createdTimestamp) / (1000 * 60 * 60 * 24));
-        const joinEmbed = new EmbedBuilder()
-            .setColor('#2ecc71')
-            .setTitle('📥 Nouveau membre')
-            .addFields(
-                { name: '👤 Membre', value: `${member.user.tag} (\`${member.id}\`)`, inline: true },
-                { name: '📅 Âge du compte', value: `\`${accountAgeDays} jour(s)\``, inline: true },
-                { name: '👥 Total membres', value: `\`${member.guild.memberCount}\``, inline: true }
-            )
-            .setTimestamp();
-        sendLog(member.guild, joinEmbed, false);
-    }
-
-    if (Array.isArray(config.autopingChannels) && config.autopingChannels.length > 0) {
-        for (const chanId of config.autopingChannels) {
-            const chan = member.guild.channels.cache.get(chanId);
-            if (chan && chan.isTextBased()) {
-                chan.send(`<@${member.id}>`).then(msg => {
-                    setTimeout(() => {
-                        msg.delete().catch(() => {});
-                    }, 1000);
-                }).catch(() => {});
-            }
-        }
-    }
-
-    if (config.welcomeChannel && config.welcomeText) {
-        const channel = member.guild.channels.cache.get(config.welcomeChannel);
-        if (channel) {
-            const welcomeMsg = config.welcomeText
-                .replace(/\{mention\}/g, `<@${member.id}>`)
-                .replace(/\{name\}/g, member.user.username);
-            channel.send(welcomeMsg).catch(() => {});
-        }
-    }
-});
-function getTicketDashboardEmbed(guild, config) {
-    const tConfig = config.ticketConfig;
-    const panelChanStr = tConfig.panelChannel ? `<#${tConfig.panelChannel}>` : '❌ Non défini';
-    const catDestStr = tConfig.categoryDestination ? `<#${tConfig.categoryDestination}>` : '❌ Défaut global';
-    const logChanStr = tConfig.logChannel ? `<#${tConfig.logChannel}>` : '❌ Non défini';
-    const imgStatus = tConfig.imageUrl ? '✅ image/gif enregistré' : '❌ Aucun';
-    const pubStatus = tConfig.published ? '🟢 publié' : '🔴 non publié';
-    const catList = tConfig.categories.map(c => {
-        const catTag = c.categoryId ? `Cat: \`${c.categoryId}\`` : '';
-        const roleTag = c.roleId ? `Rôle: <@&${c.roleId}>` : '';
-        const extras = [catTag, roleTag].filter(Boolean).join(' | ');
-        return `${c.emoji} **${c.name}** ${extras ? `(${extras})` : ''}`;
-    }).join('\n') || 'Aucune catégorie';
-
-    return new EmbedBuilder()
-        .setColor('#2b2d31')
-        .setTitle('🎫 Configuration des tickets')
-        .setDescription(
-            `**Salon du panneau :** ${panelChanStr}\n` +
-            `**Catégorie par défaut :** ${catDestStr}\n` +
-            `**Salon logs / transcripts :** ${logChanStr}\n\n` +
-            `**Titre :** ${tConfig.title}\n` +
-            `**Image / GIF :** ${imgStatus}\n` +
-            `**Panneau :** ${pubStatus}\n\n` +
-            `**Catégories, Salons & Rôles dédiés :**\n${catList}\n\n` +
-            `*Commandes : \`=setticketcatid <ID> <Nom>\` • \`=setticketrole <@rôle|ID> <Nom>\`*`
-        );
+    ctx.fillStyle = applyTextGradient(ctx, x + 20, y + 16, x + w - 20, y + 46, '#ffffff', '#e0f2fe', '#7dd3fc');
+    ctx.font = '700 17px Sans, Arial, sans-serif';
+    ctx.fillText(topCaption, x + 22, y + 34);
+    ctx.restore();
+}
+async function createCleanBlueCard(w, h, badgeText, pseudoText, avatarUrl, drawBodyFn, filename) {
+    if (!NapiCanvas) return new AttachmentBuilder(Buffer.from(''), { name: filename });
+    const canvas = NapiCanvas.createCanvas(w, h);
+    const ctx = canvas.getContext('2d');
+    const avatarImg = await loadAvatarImage(avatarUrl);
+    drawBlueThemeFrame(ctx, w, h, badgeText, pseudoText);
+    await drawBodyFn(ctx, avatarImg, w, h);
+    return new AttachmentBuilder(await canvas.encode('png'), { name: filename });
 }
 
-function getTicketDashboardRows() {
-    return [
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_salons').setLabel('Salons').setEmoji('⚙️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_texte').setLabel('Texte du panneau').setEmoji('📝').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_media').setLabel('Image / GIF').setEmoji('🖼️').setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder().setCustomId('t_dash_cats').setLabel('Catégories').setEmoji('📁').setStyle(ButtonStyle.Secondary)
-        ),
-        new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('t_dash_publish').setLabel('Publier le panneau').setEmoji('🚀').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId('t_dash_disable').setLabel('Désactiver').setEmoji('🗑️').setStyle(ButtonStyle.Danger)
-        )
-    ];
+function getHelpSection(tab = 'all') {
+    if (tab === 'gamble') {
+        return {
+            title: 'Jeux & Casino',
+            cmds: [
+                '*bj <mise|all>',
+                '*roulette <rouge|noir|vert|pair|impair> <mise>',
+                '*slots <mise|all>',
+                '*cf <pile|face> <mise>',
+                '*dice <1-6> <mise>',
+                '*crash <mise|all>',
+                '*spin <mise|all>',
+                '*scratch <mise|all>',
+                '*duel <@membre> <mise>'
+            ]
+        };
+    }
+    if (tab === 'biz') {
+        return {
+            title: 'Monopoly, Crypto & Braquages',
+            cmds: [
+                '*monopoly / *monopoly shop',
+                '*monopoly buy <id> / *monopoly collect',
+                '*crypto <BTC|ETH|KYR|SOL>',
+                '*crypto buy <sym> <qté>',
+                '*crypto sell <sym> <qté>',
+                '*heist / *hack / *rob',
+                '*lb / *top'
+            ]
+        };
+    }
+    if (tab === 'owner') {
+        return {
+            title: 'Administration & Owner',
+            cmds: [
+                '*owner <id> / *unowner <id>',
+                '*setcasino <ID|off>',
+                '*setmoney <@membre> <montant>',
+                '*reseteconomy',
+                '*enchère <10s-24h> <mise> <titre>'
+            ]
+        };
+    }
+    return {
+        title: 'Économie & Banque',
+        cmds: [
+            '*balance / *bal',
+            '*deposit <montant|all>',
+            '*withdraw <montant|all>',
+            '*work / *daily / *crime',
+            '*mine / *fish',
+            '*pay <@membre> <montant>',
+            '*gift <@membre> <montant>'
+        ]
+    };
 }
 
+async function renderHelpBluePng(tab = 'all') {
+    const active = tab === 'all' ? 'eco' : tab;
+    const sec = getHelpSection(active);
+    const items = sec.cmds;
+    const rows = Math.ceil(items.length / 2);
+    const panelTop = 148;
+    const rowStep = 48;
+    const panelH = Math.max(220, rows * rowStep + 28);
+    const totalH = Math.max(430, panelTop + panelH + 34);
+
+    return createCleanBlueCard(980, totalH, `KYURO HELP • ${active.toUpperCase()}`, 'PRÉFIXE *', null, async (ctx) => {
+        ctx.fillStyle = applyTextGradient(ctx, 34, 92, 920, 126, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(sec.title, 34, 114);
+
+        ctx.beginPath();
+        ctx.roundRect(34, panelTop, 912, panelH, 20);
+        ctx.fillStyle = 'rgba(12, 36, 78, 0.95)';
+        ctx.fill();
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.62)';
+        ctx.stroke();
+
+        items.forEach((line, idx) => {
+            const col = idx % 2;
+            const row = Math.floor(idx / 2);
+            const bx = 52 + col * 442;
+            const by = panelTop + 16 + row * rowStep;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, 434, 38, 11);
+            ctx.fillStyle = 'rgba(7, 22, 49, 0.94)';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.45)';
+            ctx.stroke();
+
+            ctx.fillStyle = applyTextGradient(ctx, bx + 12, by + 8, bx + 422, by + 30, '#ffffff', '#bae6fd', '#38bdf8');
+            ctx.font = '700 16px Sans, Arial, sans-serif';
+            const trimmed = line.length > 42 ? `${line.slice(0, 41)}…` : line;
+            ctx.fillText(trimmed, bx + 14, by + 24);
+        });
+    }, 'kyuro-help.png');
+}
+function helpButtons(activeTab = 'eco') {
+    const current = activeTab === 'all' ? 'eco' : activeTab;
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('help_eco').setLabel('Économie').setStyle(current === 'eco' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_gamble').setLabel('Jeux').setStyle(current === 'gamble' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_biz').setLabel('Monopoly & Crypto').setStyle(current === 'biz' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+        new ButtonBuilder().setCustomId('help_owner').setLabel('Owner').setStyle(current === 'owner' ? ButtonStyle.Primary : ButtonStyle.Secondary)
+    );
+}
+
+function buildContainerV2({ title, body, footer }) {
+    return new ContainerBuilder()
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(`## ${title}\n${body}`))
+        .addSeparatorComponents(new SeparatorBuilder().setSpacing(SeparatorSpacingSize.Small).setDivider(true))
+        .addTextDisplayComponents(new TextDisplayBuilder().setContent(`-# ${footer || 'Kyuro Casino • Préfixe *'}`));
+}
+
+async function replyImageOnly(message, attachment, components = []) {
+    return message.reply({ files: [attachment], components, allowedMentions: { parse: [] } });
+}
+
+async function replyContainer(message, { title, body, footer, components = [] }) {
+    return message.reply({ flags: MessageFlags.IsComponentsV2, components: [buildContainerV2({ title, body, footer }), ...components], allowedMentions: { parse: [] } });
+}
+
+async function renderWalletBluePng(userObj, extra = '') {
+    return createCleanBlueCard(980, 440, 'KYURO BANK', userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 122, 34);
+        ctx.fillStyle = applyTextGradient(ctx, 124, 92, 680, 126, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText('PORTEFEUILLE & BANQUE', 124, 114);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '600 18px Sans, Arial, sans-serif';
+        ctx.fillText(extra || 'Compte joueur actif', 124, 144);
+
+        const total = (userObj.cash || 0) + (userObj.bank || 0);
+        const boxes = [
+            { title: 'CASH DISPONIBLE', val: `${Math.floor(userObj.cash || 0).toLocaleString('fr-FR')} $`, sub: 'Liquide en poche' },
+            { title: 'COFFRE BANQUE', val: `${Math.floor(userObj.bank || 0).toLocaleString('fr-FR')} $`, sub: 'Épargne sécurisée' },
+            { title: 'FORTUNE TOTALE', val: `${Math.floor(total).toLocaleString('fr-FR')} $`, sub: `V/D : ${userObj.stats?.wins || 0}/${userObj.stats?.losses || 0}` }
+        ];
+        boxes.forEach((b, i) => {
+            const x = 34 + i * 308, y = 184;
+            ctx.beginPath();
+            ctx.roundRect(x, y, 292, 208, 20);
+            ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+            ctx.fill();
+            ctx.lineWidth = 1.8;
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.62)';
+            ctx.stroke();
+            ctx.fillStyle = '#7dd3fc';
+            ctx.font = '700 16px Sans, Arial, sans-serif';
+            ctx.fillText(b.title, x + 22, y + 38);
+            ctx.fillStyle = applyTextGradient(ctx, x + 22, y + 84, x + 268, y + 124, '#ffffff', '#bae6fd', '#38bdf8');
+            ctx.font = '700 32px Sans, Arial, sans-serif';
+            ctx.fillText(b.val, x + 22, y + 108);
+            ctx.fillStyle = 'rgba(186, 230, 253, 0.8)';
+            ctx.font = '600 15px Sans, Arial, sans-serif';
+            ctx.fillText(b.sub, x + 22, y + 176);
+        });
+    }, 'kyuro-wallet.png');
+}
+async function renderMonopolyBluePng(userObj, pendingRent, residentsCount, maxResidentsCount) {
+    return createCleanBlueCard(980, 440, 'KYURO MONOPOLY', userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 122, 34);
+        const bCount = (userObj.buildings || []).length;
+        ctx.fillStyle = applyTextGradient(ctx, 124, 96, 900, 128, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(`IMMEUBLES : ${bCount}  •  HABITANTS : ${residentsCount}/${maxResidentsCount}`, 124, 118);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '600 19px Sans, Arial, sans-serif';
+        ctx.fillText(`LOYERS À RÉCOLTER : +${Math.floor(pendingRent).toLocaleString('fr-FR')} $`, 124, 148);
+
+        ctx.beginPath();
+        ctx.roundRect(34, 174, 912, 224, 20);
+        ctx.fillStyle = 'rgba(7, 22, 49, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.58)';
+        ctx.stroke();
+
+        const baseY = 374;
+        ctx.fillStyle = '#7dd3fc';
+        ctx.beginPath();
+        ctx.roundRect(54, baseY, 872, 5, 3);
+        ctx.fill();
+
+        const visualCount = Math.min(6, Math.max(1, bCount || 1));
+        const slotW = 840 / visualCount;
+        for (let i = 0; i < visualCount; i++) {
+            const bItem = userObj.buildings[i];
+            const bw = Math.min(122, Math.floor(slotW * 0.72));
+            const bx = Math.round(68 + i * slotW + (slotW - bw) / 2);
+            const bh = Math.round(88 + ((i + (bItem ? bItem.tier : 1)) % 4) * 28);
+            const by = baseY - bh;
+            ctx.beginPath();
+            ctx.roundRect(bx, by, bw, bh, 14);
+            ctx.fillStyle = '#153f80';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#7dd3fc';
+            ctx.stroke();
+        }
+    }, 'kyuro-monopoly.png');
+}
+
+async function renderCryptoBluePng(userObj, symbol, name, price, history, userQty) {
+    return createCleanBlueCard(980, 440, `KYURO CRYPTO • ${symbol}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 32);
+        ctx.fillStyle = applyTextGradient(ctx, 120, 96, 860, 128, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`${name} — ${price.toLocaleString('fr-FR')} $`, 120, 118);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '600 18px Sans, Arial, sans-serif';
+        ctx.fillText(`PORTEFEUILLE : ${userQty} ${symbol}  •  VALEUR : ${Math.floor((userQty || 0) * price).toLocaleString('fr-FR')} $`, 120, 146);
+
+        const gx = 34, gy = 172, gw = 912, gh = 224;
+        ctx.beginPath();
+        ctx.roundRect(gx, gy, gw, gh, 20);
+        ctx.fillStyle = 'rgba(7, 20, 44, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.6)';
+        ctx.stroke();
+
+        const vals = history.length > 1 ? history : [price, price];
+        const minV = Math.min(...vals), maxV = Math.max(...vals), span = Math.max(1, maxV - minV);
+        const pts = vals.map((v, i) => ({
+            x: gx + 32 + (i / (vals.length - 1)) * (gw - 64),
+            y: gy + gh - 34 - ((v - minV) / span) * (gh - 68)
+        }));
+        ctx.beginPath();
+        pts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = applyTextGradient(ctx, gx, gy + gh, gx + gw, gy, '#38bdf8', '#7dd3fc', '#ffffff');
+        ctx.lineWidth = 4;
+        ctx.stroke();
+    }, 'kyuro-crypto.png');
+}
+async function renderSlotsBluePng(userObj, reels, bet, statusText) {
+    return createCleanBlueCard(980, 440, 'KYURO SLOTS', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 116, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 96, 900, 128, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 122);
+
+        const cabX = 34, cabY = 160, cabW = 866, cabH = 242;
+        ctx.beginPath();
+        ctx.roundRect(cabX, cabY, cabW, cabH, 22);
+        ctx.fillStyle = '#0c2752';
+        ctx.fill();
+        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.stroke();
+
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath();
+        ctx.roundRect(cabX + cabW + 12, cabY + 56, 14, 126, 7);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cabX + cabW + 19, cabY + 48, 17, 0, Math.PI * 2);
+        ctx.fillStyle = '#e0f2fe';
+        ctx.fill();
+
+        const labels = { '💎': 'GEM', '💠': 'KYR', '🪙': 'USD', '⚡': 'VOLT', '🔥': 'FIRE' };
+        reels.forEach((sym, i) => {
+            const rx = cabX + 26 + i * 276, ry = cabY + 26, rw = 258, rh = 190;
+            ctx.beginPath();
+            ctx.roundRect(rx, ry, rw, rh, 16);
+            ctx.fillStyle = '#133a78';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.75)';
+            ctx.stroke();
+
+            ctx.fillStyle = applyTextGradient(ctx, rx, ry, rx + rw, ry + rh, '#ffffff', '#e0f2fe', '#38bdf8');
+            ctx.font = '700 40px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(labels[sym] || 'WIN', rx + rw / 2, ry + rh / 2 + 2);
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+        });
+    }, 'kyuro-slots.png');
+}
+
+async function renderDiceBluePng(userObj, roll, guess, bet, statusText) {
+    return createCleanBlueCard(980, 430, 'KYURO DICE', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 900, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 126);
+
+        drawDieFace(ctx, 50, 174, 180, roll);
+        drawDieFace(ctx, 254, 174, 180, guess);
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 16px Sans, Arial, sans-serif';
+        ctx.fillText('RÉSULTAT DÉ', 50, 378);
+        ctx.fillText('TON CHOIX', 254, 378);
+
+        ctx.beginPath();
+        ctx.roundRect(458, 174, 488, 180, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.6)';
+        ctx.stroke();
+        ctx.fillStyle = applyTextGradient(ctx, 484, 240, 920, 290, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 484, 272);
+    }, 'kyuro-dice.png');
+}
+
+async function renderCrashBluePng(userObj, crashAt, targetMult, bet, statusText) {
+    return createCleanBlueCard(980, 430, 'KYURO CRASH', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 900, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 26px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 126);
+
+        const gx = 36, gy = 170, gw = 564, gh = 204;
+        ctx.beginPath();
+        ctx.roundRect(gx, gy, gw, gh, 20);
+        ctx.fillStyle = 'rgba(7, 20, 44, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+
+        const curvePts = [{ x: gx + 28, y: gy + gh - 28 }, { x: gx + 180, y: gy + gh - 56 }, { x: gx + 350, y: gy + gh - 104 }, { x: gx + gw - 34, y: gy + 34 }];
+        ctx.beginPath();
+        curvePts.forEach((p, idx) => idx === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+        ctx.strokeStyle = applyTextGradient(ctx, gx, gy + gh, gx + gw, gy, '#38bdf8', '#7dd3fc', '#ffffff');
+        ctx.lineWidth = 4;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.roundRect(622, 170, 324, 204, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 18px Sans, Arial, sans-serif';
+        ctx.fillText(`CIBLE : X${targetMult}  •  CRASH : X${crashAt}`, 646, 224);
+        ctx.fillStyle = applyTextGradient(ctx, 646, 274, 924, 316, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 24px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 646, 296);
+    }, 'kyuro-crash.png');
+}
+
+async function renderCoinflipBluePng(userObj, side, out, bet, statusText) {
+    return createCleanBlueCard(980, 420, 'KYURO COINFLIP', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 900, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 118, 126);
+
+        ctx.beginPath();
+        ctx.arc(152, 260, 82, 0, Math.PI * 2);
+        ctx.fillStyle = '#143d7d';
+        ctx.fill();
+        ctx.lineWidth = 3.5;
+        ctx.strokeStyle = '#bae6fd';
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(out.toUpperCase(), 152, 262);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        ctx.beginPath();
+        ctx.roundRect(264, 178, 682, 166, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+        ctx.stroke();
+        ctx.fillStyle = applyTextGradient(ctx, 292, 248, 920, 292, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`${side.toUpperCase()} -> ${statusText}`, 292, 274);
+    }, 'kyuro-coinflip.png');
+}
+async function renderFishOrMineBluePng(userObj, mode, itemLabel, gain) {
+    const isFish = mode === 'FISH';
+    return createCleanBlueCard(980, 420, `KYURO ${mode}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 120, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 98, 900, 130, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText(`${isFish ? 'PRISE' : 'FILON'} : ${itemLabel}`, 118, 126);
+
+        drawRealisticScenePanel(ctx, mode, 36, 174, 444, 184, isFish ? 'ZONE DE PÊCHE' : 'FILON SOUTERRAIN', itemLabel);
+
+        ctx.beginPath();
+        ctx.roundRect(500, 174, 446, 184, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.62)';
+        ctx.stroke();
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 17px Sans, Arial, sans-serif';
+        ctx.fillText(isFish ? 'RÉCOMPENSE RÉCOLTÉE' : 'MINERAI EXTRAIT', 528, 214);
+        ctx.fillStyle = applyTextGradient(ctx, 528, 262, 920, 308, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 32px Sans, Arial, sans-serif';
+        ctx.fillText(`GAIN : +${gain.toLocaleString('fr-FR')} $`, 528, 286);
+        ctx.fillStyle = '#bae6fd';
+        ctx.font = '600 16px Sans, Arial, sans-serif';
+        ctx.fillText(`CASH ACTUEL : ${(userObj.cash || 0).toLocaleString('fr-FR')} $`, 528, 326);
+    }, isFish ? 'kyuro-fish.png' : 'kyuro-mine.png');
+}
+
+async function renderBlueActionPng(userObj, badge, headline, subline) {
+    return createCleanBlueCard(980, 400, `KYURO • ${badge}`, userObj.username, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 74, 128, 34);
+        ctx.fillStyle = applyTextGradient(ctx, 126, 108, 920, 140, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 29px Sans, Arial, sans-serif';
+        ctx.fillText(headline, 126, 132);
+
+        drawRealisticScenePanel(ctx, badge, 36, 180, 344, 166, `OPÉRATION ${badge}`, subline);
+
+        ctx.beginPath();
+        ctx.roundRect(398, 180, 548, 166, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.6)';
+        ctx.stroke();
+        ctx.fillStyle = applyTextGradient(ctx, 426, 248, 920, 294, '#ffffff', '#bae6fd', '#38bdf8');
+        ctx.font = '700 27px Sans, Arial, sans-serif';
+        ctx.fillText(subline, 426, 272);
+    }, 'kyuro-action.png');
+}
+
+async function renderLeaderboardBluePng(entries) {
+    return createCleanBlueCard(980, 460, 'KYURO TOP', 'CLASSEMENT FORTUNES ($)', null, async (ctx) => {
+        ctx.fillStyle = applyTextGradient(ctx, 36, 94, 680, 126, '#ffffff', '#e0f2fe', '#7dd3fc');
+        ctx.font = '700 28px Sans, Arial, sans-serif';
+        ctx.fillText('TOP JOUEURS DU SERVEUR', 36, 116);
+        const top = entries.slice(0, 5);
+        const maxVal = Math.max(1, top[0]?.total || 1);
+        top.forEach((e, idx) => {
+            const y = 148 + idx * 54;
+            ctx.beginPath();
+            ctx.roundRect(36, y, 908, 44, 14);
+            ctx.fillStyle = 'rgba(13, 38, 82, 0.94)';
+            ctx.fill();
+            ctx.fillStyle = '#e0f2fe';
+            ctx.font = '700 20px Sans, Arial, sans-serif';
+            ctx.fillText(`#${idx + 1}  ${e.name}`, 54, y + 29);
+            const ratio = Math.max(0.06, Math.min(1, e.total / maxVal));
+            ctx.fillStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.roundRect(440, y + 16, Math.round(250 * ratio), 12, 6);
+            ctx.fill();
+            ctx.fillStyle = applyTextGradient(ctx, 730, y + 10, 926, y + 36, '#ffffff', '#bae6fd', '#38bdf8');
+            ctx.textAlign = 'right';
+            ctx.fillText(`${Math.floor(e.total).toLocaleString('fr-FR')} $`, 926, y + 29);
+            ctx.textAlign = 'left';
+        });
+    }, 'kyuro-leaderboard.png');
+}
+async function renderRouletteBluePng(userObj, num, color, choiceLabel, bet, statusText) {
+    return createCleanBlueCard(980, 440, 'KYURO ROULETTE', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 118, 30);
+        ctx.fillStyle = applyTextGradient(ctx, 118, 96, 920, 128, '#ffffff', '#bae6fd', '#7dd3fc');
+        ctx.font = '700 26px Sans, Arial, sans-serif';
+        ctx.fillText(`CHIFFRE : ${num} (${color.toUpperCase()})  •  TON CHOIX : ${choiceLabel.toUpperCase()}`, 118, 124);
+
+        const wheelCx = 166, wheelCy = 268, rOuter = 96, rInner = 54;
+        const segments = 12;
+        const palette = ['#dc2626', '#0f172a', '#dc2626', '#0f172a', '#16a34a', '#0f172a', '#dc2626', '#0f172a', '#dc2626', '#0f172a', '#dc2626', '#0f172a'];
+        for (let i = 0; i < segments; i++) {
+            const a0 = (i / segments) * Math.PI * 2 - Math.PI / 2;
+            const a1 = ((i + 1) / segments) * Math.PI * 2 - Math.PI / 2;
+            ctx.beginPath();
+            ctx.moveTo(wheelCx, wheelCy);
+            ctx.arc(wheelCx, wheelCy, rOuter, a0, a1);
+            ctx.closePath();
+            ctx.fillStyle = palette[i];
+            ctx.fill();
+            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(125, 211, 252, 0.55)';
+            ctx.stroke();
+        }
+        ctx.beginPath();
+        ctx.arc(wheelCx, wheelCy, rInner, 0, Math.PI * 2);
+        ctx.fillStyle = '#071f45';
+        ctx.fill();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = '#7dd3fc';
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 34px Sans, Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${num}`, wheelCx, wheelCy + 1);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        ctx.beginPath();
+        ctx.roundRect(292, 172, 654, 192, 20);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(125, 211, 252, 0.62)';
+        ctx.stroke();
+
+        ctx.fillStyle = '#7dd3fc';
+        ctx.font = '700 17px Sans, Arial, sans-serif';
+        ctx.fillText(`COULEUR SORTIE : ${color.toUpperCase()}  •  PARI : ${choiceLabel.toUpperCase()}`, 320, 214);
+        ctx.fillStyle = applyTextGradient(ctx, 320, 262, 920, 306, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 30px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 320, 286);
+        ctx.fillStyle = '#bae6fd';
+        ctx.font = '600 17px Sans, Arial, sans-serif';
+        ctx.fillText(`CASH ACTUEL : ${(userObj.cash || 0).toLocaleString('fr-FR')} $`, 320, 330);
+    }, 'kyuro-roulette.png');
+}
+async function renderBlackjackBluePng(userObj, bet, pCards, pVal, dCards, dVal, statusText) {
+    const suitSym = { S: '♠', H: '♥', D: '♦', C: '♣' };
+    const isRedSuit = (c) => ['H', 'D'].includes(c.slice(-1));
+    return createCleanBlueCard(980, 440, 'KYURO BLACKJACK', `${userObj.username} • ${bet.toLocaleString('fr-FR')} $`, userObj.avatarUrl, async (ctx, av) => {
+        drawRoundedAvatar(ctx, av, 72, 116, 28);
+        ctx.fillStyle = applyTextGradient(ctx, 114, 100, 900, 130, '#ffffff', '#bae6fd', '#7dd3fc');
+        ctx.font = '700 24px Sans, Arial, sans-serif';
+        ctx.fillText(`TA MAIN (${pVal})`, 114, 124);
+        ctx.fillText(`CROUPIER (${dVal})`, 536, 124);
+
+        const drawCardBox = (card, cx, cy) => {
+            const hidden = card === '??';
+            const red = !hidden && isRedSuit(card);
+            ctx.beginPath();
+            ctx.roundRect(cx, cy, 80, 122, 14);
+            ctx.fillStyle = hidden ? '#0b244d' : '#f8fafc';
+            ctx.fill();
+            ctx.lineWidth = 2.2;
+            ctx.strokeStyle = hidden ? '#38bdf8' : (red ? '#ef4444' : '#0284c7');
+            ctx.stroke();
+
+            if (hidden) {
+                ctx.fillStyle = '#7dd3fc';
+                ctx.font = '700 24px Sans, Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText('?', cx + 40, cy + 68);
+                ctx.textAlign = 'left';
+                return;
+            }
+            const rank = card.slice(0, -1);
+            const sym = suitSym[card.slice(-1)] || '♠';
+            ctx.fillStyle = red ? '#dc2626' : '#0f172a';
+            ctx.font = '700 20px Sans, Arial, sans-serif';
+            ctx.fillText(rank, cx + 10, cy + 26);
+            ctx.font = '700 28px Sans, Arial, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(sym, cx + 40, cy + 72);
+            ctx.font = '700 18px Sans, Arial, sans-serif';
+            ctx.textAlign = 'right';
+            ctx.fillText(rank, cx + 70, cy + 110);
+            ctx.textAlign = 'left';
+        };
+
+        pCards.slice(0, 5).forEach((card, i) => drawCardBox(card, 36 + i * 92, 150));
+        dCards.slice(0, 4).forEach((card, i) => drawCardBox(card, 536 + i * 92, 150));
+
+        ctx.beginPath();
+        ctx.roundRect(36, 306, 910, 74, 18);
+        ctx.fillStyle = 'rgba(13, 38, 82, 0.95)';
+        ctx.fill();
+        ctx.fillStyle = applyTextGradient(ctx, 60, 330, 920, 362, '#ffffff', '#e0f2fe', '#38bdf8');
+        ctx.font = '700 25px Sans, Arial, sans-serif';
+        ctx.fillText(statusText, 60, 352);
+    }, 'kyuro-blackjack.png');
+}
+async function handleBalance(message) {
+    const target = message.mentions.users.first() || message.author;
+    const u = getUser(target.id, target);
+    return replyImageOnly(message, await renderWalletBluePng(u, u.buildings.length > 0 ? `IMMEUBLES : ${u.buildings.length}` : 'AUCUN IMMEUBLE'));
+}
+
+async function handleDeposit(message, args) {
+    const u = getUser(message.author.id, message.author), amt = parseAmount(args[0], u.cash);
+    if (!amt || u.cash < amt) return replyContainer(message, { title: '🏦 Dépôt', body: 'Utilisation : `*deposit <montant|all>`' });
+    u.cash -= amt; u.bank += amt; saveData();
+    return replyImageOnly(message, await renderWalletBluePng(u, `DÉPÔT : +${amt.toLocaleString('fr-FR')} $`));
+}
+
+async function handleWithdraw(message, args) {
+    const u = getUser(message.author.id, message.author), amt = parseAmount(args[0], u.bank);
+    if (!amt || u.bank < amt) return replyContainer(message, { title: '🏧 Retrait', body: 'Utilisation : `*withdraw <montant|all>`' });
+    u.bank -= amt; u.cash += amt; saveData();
+    return replyImageOnly(message, await renderWalletBluePng(u, `RETRAIT : +${amt.toLocaleString('fr-FR')} $`));
+}
+
+async function handleWork(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 45 * 60 * 1000;
+    if (now - u.cooldowns.work < cd) return replyContainer(message, { title: '💼 Travail', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.work))}**.` });
+    u.cooldowns.work = now; const gain = randInt(45, 190); u.cash += gain; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'WORK', `SALAIRE : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+
+async function handleDaily(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 24 * 60 * 60 * 1000;
+    if (now - u.cooldowns.daily < cd) return replyContainer(message, { title: '🎁 Daily', body: `Prochain daily dans **${formatCooldown(cd - (now - u.cooldowns.daily))}**.` });
+    u.cooldowns.daily = now; const gain = randInt(150, 480); u.cash += gain; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'DAILY', `BONUS : +${gain.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+
+async function handleCrime(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 30 * 60 * 1000;
+    if (now - u.cooldowns.crime < cd) return replyContainer(message, { title: '🕵️ Crime', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.crime))}**.` });
+    u.cooldowns.crime = now; const ok = Math.random() < 0.38;
+    const amt = ok ? randInt(90, 340) : Math.min(u.cash, randInt(80, 260));
+    if (ok) u.cash += amt; else u.cash -= amt; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'CRIME', ok ? `COUP RÉUSSI +${amt.toLocaleString('fr-FR')} $` : `AMENDE -${amt.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+
+async function handleMine(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 25 * 60 * 1000;
+    if (now - u.cooldowns.mine < cd) return replyContainer(message, { title: '⛏️ Mine', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.mine))}**.` });
+    u.cooldowns.mine = now; const ores = ['FER', 'CUIVRE', 'OR', 'DIAMANT', 'CRISTAL KYR'], ore = ores[randInt(0, ores.length - 1)], gain = randInt(35, 220);
+    u.cash += gain; saveData();
+    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'MINE', ore, gain));
+}
+
+async function handleFish(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 25 * 60 * 1000;
+    if (now - u.cooldowns.fish < cd) return replyContainer(message, { title: '🎣 Pêche', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.fish))}**.` });
+    u.cooldowns.fish = now; const catches = ['GARDON', 'BROCHET', 'CARPE', 'COFFRE BLEU', 'PERLE'], item = catches[randInt(0, catches.length - 1)], gain = randInt(30, 195);
+    u.cash += gain; saveData();
+    return replyImageOnly(message, await renderFishOrMineBluePng(u, 'FISH', item, gain));
+}
+function getBuildingStats(ownerObj) {
+    const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [];
+    return { maxRes: list.reduce((a, b) => a + (b.maxResidents || 0), 0), residentsTotal: list.reduce((a, b) => a + (b.residents || 0), 0) };
+}
+
+function computePendingRent(ownerObj) {
+    const list = Array.isArray(ownerObj.buildings) ? ownerObj.buildings : [], now = Date.now();
+    return list.reduce((sum, b) => sum + Math.floor(Math.min(24, Math.max(0, (now - (b.lastCollect || now)) / 3600000)) * (b.residents || 0) * (b.rentPerResident || 65)), 0);
+}
+
+async function handleMonopoly(message, args) {
+    const u = getUser(message.author.id, message.author), sub = (args[0] || 'info').toLowerCase();
+    if (sub === 'shop' || sub === 'list') {
+        const lines = Object.values(BUILDINGS_CATALOG).map((b) => `• **${b.name}** (\`${b.id}\`) — **${formatMoney(b.price)}** • **${formatMoney(b.rentPerResident)}/h**`);
+        return replyContainer(message, { title: '🏙️ Kyuro Monopoly', body: lines.join('\n') });
+    }
+    if (sub === 'buy') {
+        const tpl = BUILDINGS_CATALOG[(args[1] || '').toLowerCase()];
+        if (!tpl || u.cash < tpl.price) return replyContainer(message, { title: '🏙️ Monopoly', body: 'Bien invalide ou cash insuffisant.' });
+        u.cash -= tpl.price; u.buildings.push({ id: tpl.id, name: tpl.name, tier: tpl.tier, rentPerResident: tpl.rentPerResident, maxResidents: tpl.maxResidents, residents: 1, lastCollect: Date.now() }); saveData();
+    }
+    if (sub === 'collect' || sub === 'loyer') {
+        const pending = computePendingRent(u), now = Date.now();
+        for (const b of u.buildings) b.lastCollect = now; u.cash += pending; saveData();
+    }
+    const st = getBuildingStats(u);
+    return replyImageOnly(message, await renderMonopolyBluePng(u, computePendingRent(u), st.residentsTotal, st.maxRes));
+}
+
+async function handleCrypto(message, args) {
+    const u = getUser(message.author.id, message.author), sub = (args[0] || 'KYR').toLowerCase();
+    if (sub === 'buy') {
+        const sym = (args[1] || '').toUpperCase(), amt = parseFloat(args[2]), c = db.cryptos[sym];
+        if (!c || isNaN(amt) || amt <= 0) return replyContainer(message, { title: '📈 Crypto', body: 'Utilisation : `*crypto buy <BTC|ETH|KYR|SOL> <qté>`' });
+        const cost = Math.ceil(amt * c.price); if (u.cash < cost) return replyContainer(message, { title: '📈 Crypto', body: `Il faut **${formatMoney(cost)}**.` });
+        u.cash -= cost; u.crypto[sym] = (u.crypto[sym] || 0) + amt; saveData();
+        return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym]));
+    }
+    if (sub === 'sell') {
+        const sym = (args[1] || '').toUpperCase(), amt = parseFloat(args[2]), c = db.cryptos[sym];
+        if (!c || isNaN(amt) || amt <= 0 || (u.crypto[sym] || 0) < amt) return replyContainer(message, { title: '📉 Crypto', body: 'Utilisation : `*crypto sell <BTC|ETH|KYR|SOL> <qté>`' });
+        const gain = Math.floor(amt * c.price); u.crypto[sym] -= amt; u.cash += gain; saveData();
+        return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym]));
+    }
+    const sym = db.cryptos[sub.toUpperCase()] ? sub.toUpperCase() : 'KYR', c = db.cryptos[sym];
+    return replyImageOnly(message, await renderCryptoBluePng(u, sym, c.name, c.price, c.history, u.crypto[sym] || 0));
+}
+
+async function handleGift(message, args) {
+    const s = getUser(message.author.id, message.author), t = message.mentions.users.first(), amt = parseAmount(args[1], s.cash);
+    if (!t || t.bot || t.id === message.author.id || !amt || s.cash < amt) return replyContainer(message, { title: '🎁 Gift', body: 'Utilisation : `*gift <@membre> <montant|all>`' });
+    const r = getUser(t.id, t); s.cash -= amt; r.cash += amt; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(s, 'GIFT', `DON : -${amt.toLocaleString('fr-FR')} $`, `POUR : ${r.username}`));
+}
+
+async function handleRob(message) {
+    const u = getUser(message.author.id, message.author), target = message.mentions.users.first(), now = Date.now(), cd = 30 * 60 * 1000;
+    if (!target || target.bot || target.id === message.author.id) return replyContainer(message, { title: '🥷 Rob', body: 'Mentionne un membre : `*rob <@membre>`' });
+    if (now - u.cooldowns.rob < cd) return replyContainer(message, { title: '🥷 Rob', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.rob))}**.` });
+    const tu = getUser(target.id, target); u.cooldowns.rob = now;
+    if ((tu.cash || 0) < 25) return replyContainer(message, { title: '🥷 Rob', body: `**${tu.username}** n'a pas assez de cash.` });
+    const ok = Math.random() < 0.42, amt = Math.min(tu.cash, Math.max(20, Math.floor(tu.cash * randInt(10, 28) / 100)));
+    if (ok) { tu.cash -= amt; u.cash += amt; } else { const fine = Math.min(u.cash, amt); u.cash -= fine; } saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'ROB', ok ? `VOLÉ : +${amt.toLocaleString('fr-FR')} $` : 'RATÉ / AMENDE', `CIBLE : ${tu.username}`));
+}
+
+async function handleHack(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 35 * 60 * 1000;
+    if (now - u.cooldowns.hack < cd) return replyContainer(message, { title: '💻 Hack', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.hack))}**.` });
+    u.cooldowns.hack = now; const ok = Math.random() < 0.45, gain = ok ? randInt(110, 420) : 0;
+    if (ok) { u.cash += gain; u.stats.hacksSuccess += 1; } saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'HACK', ok ? `FAILLE : +${gain.toLocaleString('fr-FR')} $` : 'ACCÈS BLOQUÉ', `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+
+async function handleHeist(message) {
+    const u = getUser(message.author.id, message.author), now = Date.now(), cd = 60 * 60 * 1000;
+    if (now - u.cooldowns.heist < cd) return replyContainer(message, { title: '🏦 Heist', body: `Patiente **${formatCooldown(cd - (now - u.cooldowns.heist))}**.` });
+    u.cooldowns.heist = now; const ok = Math.random() < 0.36, amt = ok ? randInt(220, 780) : Math.min(u.cash, randInt(100, 350));
+    if (ok) u.cash += amt; else u.cash -= amt; saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'HEIST', ok ? `BRAQUAGE : +${amt.toLocaleString('fr-FR')} $` : `ALARME : -${amt.toLocaleString('fr-FR')} $`, `CASH : ${u.cash.toLocaleString('fr-FR')} $`));
+}
+function formatAuctionRemaining(auc) {
+    if (auc.ended) return 'Terminée';
+    const rem = Math.max(0, auc.endsAt - Date.now());
+    return formatCooldown(rem);
+}
+
+function buildAuctionContainer(auc) {
+    const minNext = auc.highestBidderId ? (auc.highestBid + 1) : auc.startBid;
+    const histLines = (auc.history || []).slice(-4).map((h) => `• **${h.name}** — **${formatMoney(h.amount)}**`);
+    const body = [
+        `• **Mise de départ (min)** : **${formatMoney(auc.startBid)}**`,
+        `• **Enchère actuelle** : **${formatMoney(auc.highestBid)}**`,
+        `• **Meilleur offrant** : **${auc.highestBidderName}**`,
+        `• **Enchère minimum suivante** : **${formatMoney(minNext)}**`,
+        `• **Temps restant** : **${formatAuctionRemaining(auc)}**`,
+        histLines.length ? `\n**Dernières offres :**\n${histLines.join('\n')}` : ''
+    ].filter(Boolean).join('\n');
+
+    return buildContainerV2({
+        title: `🔨 Enchère : ${auc.title}`,
+        body,
+        footer: auc.ended ? 'Enchère clôturée • Kyuro Casino' : 'Mise à jour en temps réel • Kyuro Casino'
+    });
+}
+
+function auctionButtonRow(disabled = false) {
+    return new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('auction_bid').setLabel('Enchérir').setStyle(ButtonStyle.Primary).setDisabled(disabled)
+    );
+}
+
+async function finalizeAuction(auc, sentMessage) {
+    if (auc.ended) return;
+    auc.ended = true;
+    if (auc.ticker) clearInterval(auc.ticker);
+    if (auc.highestBidderId) {
+        const w = getUser(auc.highestBidderId);
+        if (w.cash >= auc.highestBid) {
+            w.cash -= auc.highestBid;
+            saveData();
+        }
+    }
+    await sentMessage.edit({
+        flags: MessageFlags.IsComponentsV2,
+        components: [buildAuctionContainer(auc), auctionButtonRow(true)]
+    }).catch(() => {});
+}
+
+async function handleAuctionCreate(message, args) {
+    if (!isBotOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé aux Owners.' });
+    const durMs = parseDurationMs(args[0]);
+    const startBid = parseAmount(args[1], 1e9);
+    const title = args.slice(2).join(' ').trim();
+    if (!durMs || !startBid || !title) {
+        return replyContainer(message, { title: '🔨 Enchère', body: 'Utilisation : `*enchère <10s-24h> <mise_départ> <titre>`' });
+    }
+    const auc = {
+        messageId: null,
+        title,
+        startBid,
+        highestBid: startBid,
+        highestBidderId: null,
+        highestBidderName: 'Aucun',
+        history: [],
+        endsAt: Date.now() + durMs,
+        ended: false,
+        ticker: null
+    };
+    const sent = await message.reply({
+        flags: MessageFlags.IsComponentsV2,
+        components: [buildAuctionContainer(auc), auctionButtonRow(false)]
+    });
+    auc.messageId = sent.id;
+    activeAuctions.set(sent.id, auc);
+
+    auc.ticker = setInterval(async () => {
+        if (auc.ended || Date.now() >= auc.endsAt) {
+            await finalizeAuction(auc, sent);
+            return;
+        }
+        await sent.edit({
+            flags: MessageFlags.IsComponentsV2,
+            components: [buildAuctionContainer(auc), auctionButtonRow(false)]
+        }).catch(() => {});
+    }, 5000);
+
+    setTimeout(() => finalizeAuction(auc, sent), durMs);
+}
+async function handleScratch(message, args) {
+    const u = getUser(message.author.id, message.author), bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎟️ Scratch', body: 'Mise invalide ou cash insuffisant (`*scratch <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const mults = [0, 0, 0, 0.35, 0.75, 1.2, 2.0, 3.2], m = mults[randInt(0, mults.length - 1)], gain = Math.floor(bet * m);
+    if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'SCRATCH', `MULTIPLICATEUR X${m}`, gain > 0 ? `GAIN : +${gain.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleSpin(message, args) {
+    const u = getUser(message.author.id, message.author), bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎡 Spin', body: 'Mise invalide ou cash insuffisant (`*spin <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const wheel = [0, 0, 0.4, 0.8, 1.25, 1.85, 3.0], m = wheel[randInt(0, wheel.length - 1)], gain = Math.floor(bet * m);
+    if (gain > 0) { u.cash += gain; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderBlueActionPng(u, 'SPIN', `ROUE : X${m}`, gain > 0 ? `REÇU : +${gain.toLocaleString('fr-FR')} $` : `MISE PERDUE : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleDuel(message, args) {
+    const p1 = getUser(message.author.id, message.author), t = message.mentions.users.first(), bet = parseAmount(args[1], p1.cash);
+    if (!t || t.bot || t.id === message.author.id || !bet || p1.cash < bet) return replyContainer(message, { title: '⚔️ Duel', body: 'Utilisation : `*duel <@membre> <mise|all>`' });
+    const p2 = getUser(t.id, t); if (p2.cash < bet) return replyContainer(message, { title: '⚔️ Duel', body: `**${p2.username}** n'a pas assez de cash.` });
+    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('duel_accept').setLabel('Accepter').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId('duel_decline').setLabel('Refuser').setStyle(ButtonStyle.Danger));
+    const sent = await replyContainer(message, { title: '⚔️ Défi en duel', body: `**${p1.username}** défie **${p2.username}** pour **${formatMoney(bet)}** !`, components: [row] });
+    activeDuels.set(sent.id, { p1Id: message.author.id, p2Id: t.id, bet });
+}
+
+async function handleSlots(message, args) {
+    const u = getUser(message.author.id, message.author), bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🎰 Slots', body: 'Mise invalide ou cash insuffisant (`*slots <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const syms = ['💎', '💠', '🪙', '⚡', '🔥'], r = [0,1,2].map(() => syms[randInt(0, syms.length - 1)]);
+    const mult = (r[0] === r[1] && r[1] === r[2]) ? (r[0] === '💎' ? 7 : 3.5) : ((r[0] === r[1] || r[1] === r[2] || r[0] === r[2]) ? 1.15 : 0);
+    const win = Math.floor(bet * mult); if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderSlotsBluePng(u, r, bet, win > 0 ? `GAIN : +${win.toLocaleString('fr-FR')} $` : `PERTE : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleCoinflip(message, args) {
+    const u = getUser(message.author.id, message.author), side = (args[0] || '').toLowerCase(), bet = parseAmount(args[1], u.cash);
+    if (!['pile', 'face'].includes(side) || !bet || u.cash < bet) return replyContainer(message, { title: '🪙 Coinflip', body: 'Mise invalide ou cash insuffisant (`*coinflip <pile|face> <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const out = Math.random() < 0.5 ? 'pile' : 'face', won = out === side, payout = Math.floor(bet * 1.8);
+    if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderCoinflipBluePng(u, side, out, bet, won ? `GAGNÉ : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleDice(message, args) {
+    const u = getUser(message.author.id, message.author), guess = parseInt(args[0], 10), bet = parseAmount(args[1], u.cash);
+    if (isNaN(guess) || guess < 1 || guess > 6 || !bet || u.cash < bet) return replyContainer(message, { title: '🎲 Dice', body: 'Mise invalide ou cash insuffisant (`*dice <1-6> <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const roll = randInt(1, 6), won = roll === guess, payout = Math.floor(bet * 3.6);
+    if (won) { u.cash += payout; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderDiceBluePng(u, roll, guess, bet, won ? `JACKPOT : +${payout.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+async function handleCrash(message, args) {
+    const u = getUser(message.author.id, message.author), bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🚀 Crash', body: 'Mise invalide ou cash insuffisant (`*crash <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const crashAt = Number((1 + Math.random() * 2.2).toFixed(2)), targetMult = Number((1.1 + Math.random() * 1.5).toFixed(2));
+    const won = crashAt >= targetMult, pay = won ? Math.floor(bet * targetMult) : 0;
+    if (won) { u.cash += pay; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderCrashBluePng(u, crashAt, targetMult, bet, won ? `ENCAISSÉ : +${pay.toLocaleString('fr-FR')} $` : `CRASH : -${bet.toLocaleString('fr-FR')} $`));
+}
+
+function drawCard() {
+    const ranks = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'], suits = ['S', 'H', 'D', 'C'];
+    return `${ranks[randInt(0, ranks.length - 1)]}${suits[randInt(0, suits.length - 1)]}`;
+}
+
+function handValue(cards) {
+    let total = 0, aces = 0;
+    for (const c of cards) { const r = c.slice(0, -1); if (r === 'A') { total += 11; aces++; } else if (['K', 'Q', 'J'].includes(r)) total += 10; else total += parseInt(r, 10); }
+    while (total > 21 && aces > 0) { total -= 10; aces--; }
+    return total;
+}
+
+async function handleBlackjack(message, args) {
+    const u = getUser(message.author.id, message.author), bet = parseAmount(args[0], u.cash);
+    if (!bet || u.cash < bet) return replyContainer(message, { title: '🃏 Blackjack', body: 'Mise invalide ou cash insuffisant (`*blackjack <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet; saveData();
+    const pCards = [drawCard(), drawCard()], dCards = [drawCard(), drawCard()];
+    const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('bj_hit').setLabel('Tirer').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId('bj_stand').setLabel('Rester').setStyle(ButtonStyle.Secondary));
+    const sent = await replyImageOnly(message, await renderBlackjackBluePng(u, bet, pCards, handValue(pCards), [dCards[0], '??'], '?', 'EN COURS'), [row]);
+    activeBlackjacks.set(sent.id, { userId: message.author.id, bet, pCards, dCards });
+}
+
+async function handleRoulette(message, args) {
+    const u = getUser(message.author.id, message.author), ch = (args[0] || '').toLowerCase(), bet = parseAmount(args[1], u.cash);
+    const valid = ['rouge', 'red', 'noir', 'black', 'vert', 'green', 'pair', 'even', 'impair', 'odd'];
+    if (!valid.includes(ch) || !bet || u.cash < bet) return replyContainer(message, { title: '🎡 Roulette', body: 'Mise invalide ou cash insuffisant (`*roulette <rouge|noir|vert|pair|impair> <mise|all>`).' });
+    u.cash -= bet; u.stats.wagered += bet;
+    const num = randInt(0, 36), reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+    const color = num === 0 ? 'vert' : (reds.has(num) ? 'rouge' : 'noir'), parity = num === 0 ? 'zero' : (num % 2 === 0 ? 'pair' : 'impair');
+    const norm = ['rouge','red'].includes(ch) ? 'rouge' : ['noir','black'].includes(ch) ? 'noir' : ['vert','green'].includes(ch) ? 'vert' : ['pair','even'].includes(ch) ? 'pair' : 'impair';
+    const win = Math.floor(bet * ((norm === 'vert' && color === 'vert') ? 12 : ((norm === color || norm === parity) ? 1.75 : 0)));
+    if (win > 0) { u.cash += win; u.stats.wins += 1; } else { u.stats.losses += 1; } saveData();
+    return replyImageOnly(message, await renderRouletteBluePng(u, num, color, norm, bet, win > 0 ? `GAGNÉ : +${win.toLocaleString('fr-FR')} $` : `PERDU : -${bet.toLocaleString('fr-FR')} $`));
+}
 client.on('interactionCreate', async interaction => {
-    if (!interaction.guild) return;
-
-    if (interaction.isModalSubmit()) {
-        if (interaction.customId === 'modal_ticket_text') {
-            await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            const config = getGuildConfig(interaction.guild.id);
-            const newTitle = interaction.fields.getTextInputValue('ticket_title_input');
-            const newDesc = interaction.fields.getTextInputValue('ticket_desc_input');
-            
-            if (newTitle) config.ticketConfig.title = newTitle;
-            if (newDesc) config.ticketConfig.description = newDesc;
-            saveBotData();
-
-            await interaction.editReply({ content: "✅ Textes du panneau mis à jour avec succès !" });
-            try {
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: getTicketDashboardRows() });
-            } catch (e) {}
-            return;
+    if (interaction.isModalSubmit() && interaction.customId.startsWith('auction_modal_')) {
+        const auc = activeAuctions.get(interaction.customId.replace('auction_modal_', ''));
+        if (!auc || auc.ended || Date.now() >= auc.endsAt) {
+            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
-
-        if (interaction.customId === 'modal_ticket_media') {
-            await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            const config = getGuildConfig(interaction.guild.id);
-            const url = interaction.fields.getTextInputValue('ticket_image_input');
-            
-            config.ticketConfig.imageUrl = (!url || url.toLowerCase() === 'none') ? null : url;
-            saveBotData();
-
-            await interaction.editReply({ content: "✅ Image / GIF du panneau mis à jour !" });
-            try {
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(interaction.guild, config)], components: getTicketDashboardRows() });
-            } catch (e) {}
-            return;
+        const u = getUser(interaction.user.id, interaction.user);
+        const minAllowed = auc.highestBidderId ? (auc.highestBid + 1) : auc.startBid;
+        const bid = parseAmount(interaction.fields.getTextInputValue('bid_amount').trim(), u.cash);
+        if (!bid || bid < minAllowed) {
+            return interaction.reply({ content: `Tu ne peux pas enchérir en dessous de **${formatMoney(minAllowed)}**.`, flags: MessageFlags.Ephemeral }).catch(() => {});
         }
+        if (u.cash < bid) {
+            return interaction.reply({ content: `Tu n'as pas assez de cash (**${formatMoney(u.cash)}**).`, flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+        auc.highestBid = bid;
+        auc.highestBidderId = interaction.user.id;
+        auc.highestBidderName = u.username;
+        auc.history.push({ name: u.username, amount: bid });
+        await interaction.message.edit({
+            flags: MessageFlags.IsComponentsV2,
+            components: [buildAuctionContainer(auc), auctionButtonRow(false)]
+        }).catch(() => {});
+        return interaction.reply({ content: `Offre acceptée : **${formatMoney(bid)}** sur **${auc.title}**.`, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
-
-    if (interaction.isStringSelectMenu() && interaction.customId === 'ticket_select_menu') {
-        if (!interaction.deferred && !interaction.replied) {
-            await interaction.deferReply({ ephemeral: true }).catch(() => {});
+    if (!interaction.isButton()) return;
+    if (interaction.customId === 'auction_bid') {
+        const auc = activeAuctions.get(interaction.message.id);
+        if (!auc || auc.ended || Date.now() >= auc.endsAt) {
+            return interaction.reply({ content: 'Cette enchère est terminée.', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
-        const guild = interaction.guild;
-        const member = interaction.member;
-        const selectedValue = interaction.values[0];
-        const config = getGuildConfig(guild.id);
-        const tConfig = config.ticketConfig;
-
-        const catObj = tConfig.categories.find(c => c.id === selectedValue) || { name: 'support', emoji: '🎫', categoryId: null, roleId: null };
-
-        try {
-            const overwrites = [
-                { id: guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                { id: member.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory] }
-            ];
-
-            if (catObj.roleId && guild.roles.cache.has(catObj.roleId)) {
-                overwrites.push({
-                    id: catObj.roleId,
-                    allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ReadMessageHistory]
-                });
-            }
-
-            const channelOptions = {
-                name: `${catObj.name.toLowerCase()}-${member.user.username}`,
-                type: ChannelType.GuildText,
-                permissionOverwrites: overwrites
-            };
-
-            if (catObj.categoryId) {
-                channelOptions.parent = catObj.categoryId;
-            } else if (tConfig.categoryDestination) {
-                channelOptions.parent = tConfig.categoryDestination;
-            }
-
-            const ticketChannel = await guild.channels.create(channelOptions);
-
-            const embed = new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setTitle(`${catObj.emoji} Ticket [ ${catObj.name.toUpperCase()} ] - ${member.user.username}`)
-                .setDescription("Un membre de notre équipe va bientôt te prendre en charge.\nClique sur le bouton ci-dessous pour fermer et archiver le ticket.");
-
-            const closeRow = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('close_ticket').setLabel('🔒 Fermer le ticket').setStyle(ButtonStyle.Danger)
-            );
-
-            const mentionContent = catObj.roleId ? `<@${member.id}> <@&${catObj.roleId}>` : `<@${member.id}>`;
-            await ticketChannel.send({ content: mentionContent, embeds: [embed], components: [closeRow] });
-
-            const logEmbed = new EmbedBuilder()
-                .setColor('#3498db')
-                .setTitle('🎫 Ticket ouvert')
-                .setDescription(`**Membre :** ${member.user.tag} (\`${member.user.id}\`)\n**Salon :** ${ticketChannel}\n**Type :** \`${catObj.name}\`${catObj.roleId ? `\n**Rôle notifié :** <@&${catObj.roleId}>` : ''}`)
-                .setTimestamp();
-            sendLog(guild, logEmbed, false);
-
-            return interaction.editReply({ content: `✅ Votre ticket a été ouvert avec succès : ${ticketChannel}` });
-        } catch (e) {
-            return interaction.editReply({ content: "❌ Erreur lors de la création du salon de ticket." });
-        }
+        const minAllowed = auc.highestBidderId ? (auc.highestBid + 1) : auc.startBid;
+        const modal = new ModalBuilder().setCustomId(`auction_modal_${interaction.message.id}`).setTitle(`Enchérir • ${auc.title.slice(0, 32)}`);
+        const input = new TextInputBuilder()
+            .setCustomId('bid_amount')
+            .setLabel(`Minimum : ${minAllowed} $ (actuel : ${auc.highestBid} $)`)
+            .setStyle(TextInputStyle.Short)
+            .setPlaceholder(`${minAllowed}`)
+            .setRequired(true);
+        return interaction.showModal(modal.addComponents(new ActionRowBuilder().addComponents(input))).catch(() => {});
     }
-    if (interaction.isButton()) {
-        const guild = interaction.guild;
-        const config = getGuildConfig(guild.id);
-        const tConfig = config.ticketConfig;
-
-        if (interaction.customId === 'role_panel_claim') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            }
-            const roleId = config.rolePanel && config.rolePanel.roleId;
-            if (!roleId) {
-                return interaction.editReply({ content: "❌ Aucun rôle n'est configuré sur ce panneau." });
-            }
-            const role = guild.roles.cache.get(roleId);
-            if (!role) {
-                return interaction.editReply({ content: "❌ Le rôle configuré est introuvable." });
-            }
-            const member = interaction.member;
-            try {
-                if (member.roles.cache.has(role.id)) {
-                    await member.roles.remove(role, 'Retrait via bouton rôle').catch(() => {});
-                    return interaction.editReply({ content: `✅ Le rôle **${role.name}** t'a été retiré.` });
-                } else {
-                    await member.roles.add(role, 'Attribution via bouton rôle').catch(() => {});
-                    return interaction.editReply({ content: `✅ Tu as reçu le rôle **${role.name}** !` });
-                }
-            } catch (e) {
-                return interaction.editReply({ content: "❌ Impossible de modifier ce rôle (vérifie la hiérarchie du bot)." });
-            }
-        }
-
-        if (interaction.customId === 'close_ticket') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.deferReply({ ephemeral: true }).catch(() => {});
-            }
-            const channel = interaction.channel;
-            try {
-                const messages = await channel.messages.fetch({ limit: 100 });
-                const transcript = messages.reverse().map(m => `[${new Date(m.createdTimestamp).toLocaleString()}] ${m.author.tag}: ${m.content}`).join('\n');
-                
-                const buffer = Buffer.from(transcript, 'utf-8');
-                const attachment = new AttachmentBuilder(buffer, { name: `transcription-${channel.name}.txt` });
-
-                const logEmbed = new EmbedBuilder()
-                    .setColor('#e74c3c')
-                    .setTitle('📁 Ticket fermé & Archivé')
-                    .setDescription(`**Salon :** \`${channel.name}\`\n**Fermé par :** ${interaction.user.tag}`)
-                    .setTimestamp();
-
-                if (tConfig.logChannel) {
-                    const logChan = guild.channels.cache.get(tConfig.logChannel);
-                    if (logChan) await logChan.send({ embeds: [logEmbed], files: [attachment] });
-                } else {
-                    sendLog(guild, logEmbed, false);
-                }
-            } catch (err) {}
-
-            await interaction.editReply({ content: "🔒 Fermeture du salon en cours..." });
-            setTimeout(() => channel.delete().catch(() => {}), 2000);
-            return;
-        }
-
-        if (interaction.customId === 'join_giveaway') {
-            if (!interaction.deferred && !interaction.replied) {
-                await interaction.reply({ content: "🎉 Tu participes officiellement au giveaway !", ephemeral: true }).catch(() => {});
-            }
-            return;
-        }
-
-        if (interaction.customId.startsWith('t_dash_')) {
-            const actorRank = getUserRankLevel(null, interaction.user.id) || (isSuperOwnerById(interaction.user.id, interaction.user.username, interaction.user.globalName) ? 4 : 0);
-            if (actorRank < 3) {
-                return interaction.reply({ content: NO_PERM_MSG, ephemeral: true }).catch(() => {});
-            }
-
-            const action = interaction.customId.replace('t_dash_', '');
-
-            if (action === 'salons') {
-                return interaction.reply({ content: `⚙️ **Salons, Catégories & Rôles :**\n• Salon du panneau : \`=setticketpanel #salon\`\n• Catégorie globale : \`=setticketcat <ID>\`\n• Catégorie spécifique : \`=setticketcatid <ID> <Nom>\`\n• Rôle dédié & ping : \`=setticketrole <@rôle|ID> <Nom>\`\n• Logs : \`=setticketlog #salon\``, ephemeral: true });
-            }
-            if (action === 'texte') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_ticket_text')
-                    .setTitle('Modifier le Texte du Panneau');
-
-                const titleInput = new TextInputBuilder()
-                    .setCustomId('ticket_title_input')
-                    .setLabel('Titre du panneau')
-                    .setStyle(TextInputStyle.Short)
-                    .setValue(tConfig.title)
-                    .setRequired(true);
-
-                const descInput = new TextInputBuilder()
-                    .setCustomId('ticket_desc_input')
-                    .setLabel('Description du panneau')
-                    .setStyle(TextInputStyle.Paragraph)
-                    .setValue(tConfig.description)
-                    .setRequired(true);
-
-                modal.addComponents(new ActionRowBuilder().addComponents(titleInput), new ActionRowBuilder().addComponents(descInput));
-                return interaction.showModal(modal);
-            }
-            if (action === 'media') {
-                const modal = new ModalBuilder()
-                    .setCustomId('modal_ticket_media')
-                    .setTitle('Modifier l\'Image / GIF');
-
-                const imageInput = new TextInputBuilder()
-                    .setCustomId('ticket_image_input')
-                    .setLabel('URL de l\'image (ou "none")')
-                    .setStyle(TextInputStyle.Short)
-                    .setValue(tConfig.imageUrl || '')
-                    .setRequired(false);
-
-                modal.addComponents(new ActionRowBuilder().addComponents(imageInput));
-                return interaction.showModal(modal);
-            }
-            if (action === 'cats') {
-                const catInfo = tConfig.categories.map(c => `• **${c.emoji} ${c.name}** -> Cat: \`${c.categoryId || 'Défaut'}\` | Rôle: ${c.roleId ? `<@&${c.roleId}>` : '`Aucun`'}`).join('\n') || 'Aucune';
-                return interaction.reply({ content: `📁 **Catégories actuelles :**\n${catInfo}\n\n• Ajouter : \`=ticketadd <Nom> <Emoji>\`\n• Assigner catégorie : \`=setticketcatid <ID> <Nom>\`\n• Assigner rôle : \`=setticketrole <@rôle|ID> <Nom>\``, ephemeral: true });
-            }
-            if (action === 'disable') {
-                if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
-                tConfig.published = false;
-                saveBotData();
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: getTicketDashboardRows() }).catch(() => {});
-                return interaction.editReply({ content: "🗑️ Panneau de tickets désactivé." });
-            }
-            if (action === 'publish') {
-                if (!interaction.deferred && !interaction.replied) await interaction.deferReply({ ephemeral: true }).catch(() => {});
-                if (!tConfig.panelChannel) {
-                    return interaction.editReply({ content: "❌ Définis d'abord un salon avec `=setticketpanel #salon` !" });
-                }
-                const targetChan = guild.channels.cache.get(tConfig.panelChannel);
-                if (!targetChan) return interaction.editReply({ content: "❌ Salon introuvable." });
-
-                const panelEmbed = new EmbedBuilder()
-                    .setColor('#2b2d31')
-                    .setTitle(tConfig.title)
-                    .setDescription(tConfig.description);
-
-                if (tConfig.imageUrl) panelEmbed.setImage(tConfig.imageUrl);
-
-                const selectMenu = new StringSelectMenuBuilder()
-                    .setCustomId('ticket_select_menu')
-                    .setPlaceholder('🎫 Choisissez une catégorie...')
-                    .addOptions(tConfig.categories.map(c => ({
-                        label: c.name,
-                        description: c.description || `Ouvrir un ticket ${c.name}`,
-                        value: c.id,
-                        emoji: c.emoji
-                    })));
-
-                const menuRow = new ActionRowBuilder().addComponents(selectMenu);
-
-                await targetChan.send({ embeds: [panelEmbed], components: [menuRow] }).catch(() => {});
-                tConfig.published = true;
-                saveBotData();
-
-                await interaction.message.edit({ embeds: [getTicketDashboardEmbed(guild, config)], components: getTicketDashboardRows() }).catch(() => {});
-                return interaction.editReply({ content: `🚀 Panneau publié avec succès dans ${targetChan} !` });
-            }
-        }
+    if (interaction.customId.startsWith('help_')) {
+        const tab = interaction.customId.replace('help_', '');
+        return interaction.update({ files: [await renderHelpBluePng(tab)], components: [helpButtons(tab)] }).catch(() => {});
     }
+    const duel = activeDuels.get(interaction.message.id);
+    if (duel) {
+        if (interaction.user.id !== duel.p2Id) return;
+        activeDuels.delete(interaction.message.id);
+        const p1 = getUser(duel.p1Id), p2 = getUser(duel.p2Id, interaction.user);
+        if (interaction.customId === 'duel_decline') return interaction.update({ flags: MessageFlags.IsComponentsV2, components: [buildContainerV2({ title: '⚔️ Duel refusé', body: `**${p2.username}** a décliné.` })] }).catch(() => {});
+        if (p1.cash < duel.bet || p2.cash < duel.bet) return interaction.update({ flags: MessageFlags.IsComponentsV2, components: [buildContainerV2({ title: '⚔️ Duel annulé', body: 'Solde insuffisant.' })] }).catch(() => {});
+        const p1Wins = Math.random() < 0.5, winAmt = Math.floor(duel.bet * 0.9);
+        if (p1Wins) { p1.cash += winAmt; p2.cash -= duel.bet; p1.stats.wins += 1; p2.stats.losses += 1; } else { p2.cash += winAmt; p1.cash -= duel.bet; p2.stats.wins += 1; p1.stats.losses += 1; }
+        saveData();
+        return interaction.update({ flags: MessageFlags.IsComponentsV2, components: [buildContainerV2({ title: '⚔️ Résultat du duel', body: `Victoire de **${(p1Wins ? p1 : p2).username}** (+**${formatMoney(winAmt)}**) !` })] }).catch(() => {});
+    }
+    const game = activeBlackjacks.get(interaction.message.id);
+    if (!game || interaction.user.id !== game.userId) return;
+    const u = getUser(game.userId, interaction.user); let finished = false, status = 'EN COURS';
+    if (interaction.customId === 'bj_hit') { game.pCards.push(drawCard()); const pv = handValue(game.pCards); if (pv > 21) { finished = true; u.stats.losses += 1; status = `BUST (${pv}) -${game.bet} $`; } }
+    else if (interaction.customId === 'bj_stand') { finished = true; while (handValue(game.dCards) < 17) game.dCards.push(drawCard()); const pv = handValue(game.pCards), dv = handValue(game.dCards); if (dv > 21 || pv > dv) { const pay = Math.floor(game.bet * 1.8); u.cash += pay; u.stats.wins += 1; status = `WIN ${pv} VS ${dv} +${pay} $`; } else if (pv === dv) { u.cash += game.bet; status = `ÉGALITÉ ${pv} VS ${dv}`; } else { u.stats.losses += 1; status = `PERDU ${pv} VS ${dv} -${game.bet} $`; } }
+    saveData(); if (finished) activeBlackjacks.delete(interaction.message.id);
+    await interaction.update({ files: [await renderBlackjackBluePng(u, game.bet, game.pCards, handValue(game.pCards), finished ? game.dCards : [game.dCards[0], '??'], finished ? handValue(game.dCards) : '?', status)], components: finished ? [] : interaction.message.components }).catch(() => {});
 });
 client.on('messageCreate', async message => {
-    if (!message.author || message.author.bot || !message.guild) return;
-
-    if (message.content.startsWith('!')) {
-        if (!isSuperOwner(message)) return;
-
-        const args = message.content.slice(1).trim().split(/ +/);
-        const command = args.shift().toLowerCase();
-
-        if (command === 'dmall') {
-            await message.reply("💬 **[DMAll]** Envoie ton message à diffuser (variables: `{mention}`, `{name}`). \n💡 *Tape **annuler** pour stopper.*");
-            const filter = m => m.author.id === message.author.id;
-            try {
-                const collected = await message.channel.awaitMessages({ filter, max: 1, time: 60000, errors: ['time'] });
-                const m = collected.first();
-                if (m.content.toLowerCase() === 'annuler') {
-                    return message.channel.send("❌ **Opération DMAll annulée.**");
-                }
-                const messageTemplate = m.content;
-                const previewEmbed = new EmbedBuilder()
-                    .setColor('#2b2d31')
-                    .setTitle('⚠️ Confirmation requise - DMAll')
-                    .setDescription(`Voici le message qui va être diffusé :\n\n\`\`\`${messageTemplate}\`\`\``);
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder().setCustomId('confirm_dmall').setLabel('Confirmer l\'envoi').setStyle(ButtonStyle.Success),
-                    new ButtonBuilder().setCustomId('cancel_dmall').setLabel('Annuler').setStyle(ButtonStyle.Danger)
-                );
-
-                const confirmMsg = await message.channel.send({ embeds: [previewEmbed], components: [row] });
-                const buttonCollector = confirmMsg.createMessageComponentCollector({ time: 60000, max: 1 });
-
-                buttonCollector.on('collect', async interaction => {
-                    if (interaction.user.id !== message.author.id) return interaction.reply({ content: "Non.", ephemeral: true });
-                    if (interaction.customId === 'cancel_dmall') {
-                        return interaction.update({ content: "❌ **Diffusion DMAll annulée.**", embeds: [], components: [] }).catch(() => {});
-                    }
-                    if (interaction.customId === 'confirm_dmall') {
-                        await interaction.update({ content: "🚀 **Diffusion DMAll ultra-rapide lancée...**", embeds: [], components: [] }).catch(() => {});
-                        
-                        try {
-                            await message.guild.members.fetch();
-                            const members = Array.from(message.guild.members.cache.filter(member => !member.user.bot).values());
-                            const totalMembers = members.length;
-                            let successCount = 0;
-                            let failCount = 0;
-                            let processed = 0;
-
-                            const liveEmbed = new EmbedBuilder()
-                                .setColor('#f39c12')
-                                .setTitle('🚀 Diffusion DMAll en cours...')
-                                .setDescription(`Envoi massif ultra-rapide...`)
-                                .addFields(
-                                    { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
-                                    { name: '✅ Succès', value: `\`0\``, inline: true },
-                                    { name: '❌ Échecs', value: `\`0\``, inline: true },
-                                    { name: '⏳ Restants', value: `\`${totalMembers}\``, inline: true }
-                                )
-                                .setTimestamp();
-
-                            const statusMsg = await message.channel.send({ embeds: [liveEmbed] });
-
-                            const batchSize = 25;
-                            for (let i = 0; i < members.length; i += batchSize) {
-                                const batch = members.slice(i, i + batchSize);
-                                await Promise.all(batch.map(async member => {
-                                    processed++;
-                                    try {
-                                        const finalMessage = messageTemplate
-                                            .replace(/\{mention\}/g, `<@${member.id}>`)
-                                            .replace(/\{name\}/g, member.user.username);
-                                        await member.send(finalMessage);
-                                        successCount++;
-                                    } catch (err) {
-                                        failCount++;
-                                    }
-                                }));
-
-                                liveEmbed.setFields(
-                                    { name: '📊 Total', value: `\`${totalMembers}\``, inline: true },
-                                    { name: '✅ Succès', value: `\`${successCount}\``, inline: true },
-                                    { name: '❌ Échecs', value: `\`${failCount}\``, inline: true },
-                                    { name: '⏳ Restants', value: `\`${totalMembers - processed}\``, inline: true }
-                                );
-                                await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
-                            }
-
-                            liveEmbed.setColor('#2ecc71')
-                                .setTitle('✅ Diffusion DMAll Terminée !')
-                                .setDescription(`Envoi ultra-rapide terminé.`);
-                            
-                            await statusMsg.edit({ embeds: [liveEmbed] }).catch(() => {});
-                        } catch (error) {
-                            message.channel.send("❌ Erreur lors du DMAll.");
-                        }
-                    }
-                });
-            } catch (err) {
-                message.channel.send("⌛ Temps écoulé.");
-            }
-            return;
-        }
-        return;
-    }
-
-    const config = getGuildConfig(message.guild.id);
-    const userId = message.author.id;
-    const authorRank = getUserRankLevel(message);
-    const isOwnerOrSuper = authorRank >= 3;
-
-    if (config.antilink && !isOwnerOrSuper) {
-        if (containsSuspiciousLink(message.content)) {
-            try {
-                await message.delete().catch(() => {});
-                const warning = await message.channel.send(`⚠️ ${message.author}, les liens et invitations sont interdits ici.`);
-                setTimeout(() => warning.delete().catch(() => {}), 4000);
-
-                await executeAutoSanction(message.guild, message.member, config.antilinkAction, 'Anti-Link: Lien non autorisé');
-                return;
-            } catch (e) {}
-        }
-    }
-
-    if (config.antispam && !isOwnerOrSuper) {
-        const now = Date.now();
-        let userSpam = spamTracker.get(userId) || [];
-        userSpam = userSpam.filter(timestamp => now - timestamp < config.antispamIntervalMs);
-        userSpam.push(now);
-        spamTracker.set(userId, userSpam);
-
-        if (userSpam.length >= config.antispamLimit) {
-            try {
-                await message.delete().catch(() => {});
-                const warning = await message.channel.send(`🚨 ${message.author}, veuillez ralentir (Anti-Spam).`);
-                setTimeout(() => warning.delete().catch(() => {}), 3000);
-
-                await executeAutoSanction(message.guild, message.member, config.antispamAction, 'Anti-Spam: Messages trop rapides');
-                return;
-            } catch (e) {}
-        }
-    }
-
-    if (!message.content.startsWith(PREFIX)) return;
-
+    if (!message.author || message.author.bot || !message.guild || !message.content.startsWith(PREFIX)) return;
     const args = message.content.slice(PREFIX.length).trim().split(/ +/);
-    const command = args.shift().toLowerCase();
-    const targetArg = args[0];
-
-    const requireRank = (minRank) => {
-        if (authorRank < minRank) {
-            message.reply(NO_PERM_MSG).catch(() => {});
-            return false;
-        }
-        return true;
-    };
-    if (command === 'embed') {
-        if (!requireRank(2)) return;
-        const fullContent = args.join(' ');
-        if (!fullContent.includes('|')) {
-            return message.reply("❌ **Commande non correcte.** Utilisation : `=embed <titre> | <description>`");
-        }
-        const parts = fullContent.split('|');
-        const title = parts.shift().trim();
-        const description = parts.join('|').trim();
-
-        const embed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(`**${title}**`)
-            .setDescription(description)
-            .setFooter({ text: `Envoyé par ${message.author.tag}`, iconURL: message.author.displayAvatarURL() });
-
-        await message.delete().catch(() => {});
-        return message.channel.send({ embeds: [embed] });
-    }
-
-    if (command === 'help') {
-        const helpCategories = {
-            accueil: {
-                label: 'Accueil', emoji: '🏠', title: 'Accueil du Bot',
-                commands: [
-                    '👋 **Bienvenue sur le menu d\'aide !**\nCe bot offre une gestion complète de ton serveur (Sécurité AutoMod, Anti-Raid, Modération, Système de Tickets interactif, Rôles Bouton, Autorole, Soutien et Outils).\n\n💬 Pour le moindre problème, question ou bug, contacte directement le créateur en message privé : **@graveuhq**.'
-                ]
-            },
-            tickets: {
-                label: 'Tickets', emoji: '🎫', title: 'Gestion des Tickets',
-                commands: [
-                    '`=ticketsetup`\n┗ Panneau visuel interactif',
-                    '`=ticketadd <nom> <emoji>`\n┗ Ajouter un type',
-                    '`=ticketremove <nom>`\n┗ Supprimer un type',
-                    '`=setticketpanel <#salon>`\n┗ Salon du panneau',
-                    '`=setticketcat <ID>`\n┗ Catégorie globale des tickets',
-                    '`=setticketcatid <ID> <nom>`\n┗ Catégorie spécifique par type',
-                    '`=setticketrole <@rôle|ID> <nom>`\n┗ Accès & Ping rôle par type',
-                    '`=setticketlog <#salon>`\n┗ Salon de logs',
-                    '`=settickettitle <titre>`\n┗ Titre du panneau',
-                    '`=setticketdesc <desc>`\n┗ Description',
-                    '`=setticketimage <url|none>`\n┗ Image / GIF',
-                    '`=closeticket`\n┗ Fermer un ticket'
-                ]
-            },
-            automod: {
-                label: 'AutoMod & Sécurité', emoji: '🛡️', title: 'Sécurité, AutoMod & Anti-Raid',
-                commands: [
-                    '`=antilink on / off`\n┗ Anti-lien complet',
-                    '`=setantilink <action>`\n┗ Sanction anti-lien',
-                    '`=antispam on / off`\n┗ Anti-spam',
-                    '`=setantispam <action>`\n┗ Sanction anti-spam',
-                    '`=antibot on / off`\n┗ Anti-bot (Alerte Sécurité)',
-                    '`=setantibot <action>`\n┗ Sanction anti-bot',
-                    '`=setalertrole <@rôle|ID|none>`\n┗ Rôle ping sur Alertes Sécurité',
-                    '`=antiraid <on|off|status>`\n┗ Anti-raid automatique',
-                    '`=lockdown <on|off>`\n┗ Verrouillage général d\'urgence'
-                ]
-            },
-            sanctions: {
-                label: 'Sanctions', emoji: '🔨', title: 'Commandes Sanctions',
-                commands: [
-                    '`=bl <ID|@mention> [raison]`\n┗ Bannir',
-                    '`=softbl <ID|@mention>`\n┗ Softban',
-                    '`=unbl <ID>`\n┗ Débannir',
-                    '`=blist`\n┗ Liste des bannis',
-                    '`=unbanall`\n┗ Tout débannir',
-                    '`=kick <ID|@mention>`\n┗ Expulser',
-                    '`=mute <@membre> <durée> [raison]`\n┗ Mute',
-                    '`=jail <@membre> [raison]`\n┗ Prison',
-                    '`=unjail <@membre>`\n┗ Libérer',
-                    '`=warn <@membre> [raison]`\n┗ Avertir'
-                ]
-            },
-            nettoyage: {
-                label: 'Nettoyage', emoji: '🧹', title: 'Nettoyage & Outils',
-                commands: [
-                    '`=clear <1-50>`\n┗ Supprimer des messages',
-                    '`=purge <ID|@mention>`\n┗ Purger les msgs d\'un membre',
-                    '`=snipe`\n┗ Dernier message supprimé',
-                    '`=embed <titre> | <desc>`\n┗ Créer un embed'
-                ]
-            },
-            salons: {
-                label: 'Salons', emoji: '🔒', title: 'Salons & Vocaux',
-                commands: [
-                    '`=lock` / `=unlock`\n┗ Verrouiller / Déverrouiller',
-                    '`=hide` / `=unhide`\n┗ Cacher / Afficher le salon',
-                    '`=slowmode <sec>`\n┗ Mode lent',
-                    '`=renew`\n┗ Régénérer le salon',
-                    '`=createtext <nom>`\n┗ Créer salon texte',
-                    '`=createvoice <nom>`\n┗ Créer salon vocal'
-                ]
-            },
-            roles: {
-                label: 'Rôles & Panels', emoji: '🏷️', title: 'Gestion des Rôles, Soutien & Boutons',
-                commands: [
-                    '`=addrole <@membre> <@rôle|ID>`\n┗ Ajouter un rôle',
-                    '`=delrole <@membre> <@rôle|ID>`\n┗ Retirer un rôle',
-                    '`=autorole <add|remove|list|clear> [@rôles|IDs]`\n┗ Rôle auto à l\'arrivée',
-                    '`=soutien set <@rôle|ID> <texte>` / `=soutien off` / `=soutien status`\n┗ Rôle auto selon le statut personnalisé',
-                    '`=panelrole <#salon> <@rôle|ID> | <Titre> | <Description> | [LabelBouton]`\n┗ Créer embed + bouton rôle',
-                    '`=editpanel <Nouvelle description>`\n┗ Modifier la description du panel rôle'
-                ]
-            },
-            utilitaires: {
-                label: 'Utilitaires', emoji: '📊', title: 'Stats & Utilitaires',
-                commands: [
-                    '`=stats`\n┗ Stats serveur',
-                    '`=userinfo [@membre|ID]`\n┗ Infos d\'un membre',
-                    '`=avatar [@membre|ID]`\n┗ Photo de profil',
-                    '`=ping`\n┗ Latence du bot'
-                ]
-            },
-            giveaways: {
-                label: 'Giveaways', emoji: '🎉', title: 'Giveaways',
-                commands: [
-                    '`=gcreate <durée> <gagnants> <prix>`\n┗ Lancer un giveaway'
-                ]
-            },
-            fun: {
-                label: 'Fun', emoji: '🎮', title: 'Commandes Fun',
-                commands: [
-                    '`=gay [@membre]`\n┗ Test gay',
-                    '`=iq [@membre]`\n┗ Test QI',
-                    '`=rate [sujet]`\n┗ Rate un truc',
-                    '`=horoscope [signe]`\n┗ Horoscope',
-                    '`=kiss <@membre>`\n┗ Bisou'
-                ]
-            },
-            staff: {
-                label: 'Staff', emoji: '👑', title: 'Staff & Hiérarchie',
-                commands: [
-                    '`=owner <@user|ID>` / `=unowner`\n┗ Gérer les owners bot',
-                    '`=admin <@membre> / =unadmin`\n┗ Gérer les admins bot',
-                    '`=mod <@membre> / =unmod`\n┗ Gérer les modos bot',
-                    '`=owners`\n┗ Liste des owners',
-                    '`=setlog <#salon>`\n┗ Salon de logs général',
-                    '`=setwelcome <#salon> <msg>`\n┗ Salon de bienvenue',
-                    '`=autoping <add|remove|list|clear> [#salons]`\n┗ Ghostping à l\'arrivée'
-                ]
-            }
-        };
-
-        const catKeys = Object.keys(helpCategories);
-        let currentIndex = 0;
-
-        const generateEmbed = (index) => {
-            const key = catKeys[index];
-            const cat = helpCategories[key];
-            return new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setTitle(`${cat.emoji} ${cat.title}`)
-                .setDescription(cat.commands.join('\n\n'))
-                .setFooter({ text: `Demandé par ${message.author.tag} • Page ${index + 1}/${catKeys.length}` });
-        };
-
-        const generateMenu = () => {
-            return new ActionRowBuilder().addComponents(
-                new StringSelectMenuBuilder()
-                    .setCustomId('help_select_menu')
-                    .setPlaceholder('📁 Choisir une catégorie...')
-                    .addOptions(catKeys.map(k => ({
-                        label: helpCategories[k].label,
-                        description: `Commandes ${helpCategories[k].label}`,
-                        value: k,
-                        emoji: helpCategories[k].emoji
-                    })))
-            );
-        };
-
-        const sentMsg = await message.reply({ embeds: [generateEmbed(currentIndex)], components: [generateMenu()] });
-        const collector = sentMsg.createMessageComponentCollector({ time: 60000 });
-        collector.on('collect', async i => {
-            if (i.user.id !== message.author.id) return i.reply({ content: "Ce menu ne t'appartient pas !", ephemeral: true });
-            currentIndex = catKeys.indexOf(i.values[0]);
-            await i.update({ embeds: [generateEmbed(currentIndex)], components: [generateMenu()] }).catch(() => {});
-        });
-        collector.on('end', () => sentMsg.edit({ components: [] }).catch(() => {}));
-        return;
-    }
-    if (command === 'soutien') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-
-        if (sub === 'off') {
-            config.soutien = {
-                enabled: false,
-                text: config.soutien ? config.soutien.text : null,
-                roleId: config.soutien ? config.soutien.roleId : null
-            };
-            saveBotData();
-            return message.reply("🔕 Système **soutien** désactivé.");
-        }
-
-        if (sub === 'status') {
-            const s = config.soutien || { enabled: false, text: null, roleId: null };
-            const roleDisp = s.roleId ? `<@&${s.roleId}> (\`${s.roleId}\`)` : 'Aucun';
-            const textDisp = s.text ? `\`${s.text}\`` : 'Aucun';
-            return message.reply({
-                embeds: [
-                    new EmbedBuilder()
-                        .setColor('#2b2d31')
-                        .setTitle('💖 Configuration Soutien')
-                        .setDescription(`**État :** ${s.enabled ? '🟢 Activé' : '🔴 Désactivé'}\n**Texte demandé :** ${textDisp}\n**Rôle attribué :** ${roleDisp}`)
-                ]
-            });
-        }
-
-        if (sub === 'set') {
-            const role = await fetchTargetRole(message, args[1]);
-            const soutienText = args.slice(2).join(' ').trim();
-            if (!role || !soutienText) {
-                return message.reply("Utilisation : `=soutien set <@rôle|ID> <texte du statut>`");
-            }
-            config.soutien = {
-                enabled: true,
-                text: soutienText,
-                roleId: role.id
-            };
-            saveBotData();
-            await syncSoutienForGuild(message.guild);
-            return message.reply(`✅ Soutien activé ! Si un membre met \`${soutienText}\` dans son statut, il recevra <@&${role.id}> (et le perdra dès qu'il le retire).`);
-        }
-
-        return message.reply("Utilisation : `=soutien set <@rôle|ID> <texte>` • `=soutien off` • `=soutien status`");
-    }
-
-    if (command === 'autorole') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-
-        const extractRoleIds = () => {
-            const ids = new Set();
-            for (const [, r] of message.mentions.roles) ids.add(r.id);
-            for (const raw of args.slice(1)) {
-                const clean = raw.replace(/<@&(\d+)>/, '$1');
-                if (/^\d{15,22}$/.test(clean) && message.guild.roles.cache.has(clean)) {
-                    ids.add(clean);
-                }
-            }
-            return Array.from(ids);
-        };
-
-        if (sub === 'add') {
-            const rIds = extractRoleIds();
-            if (rIds.length === 0) return message.reply("Utilisation : `=autorole add <@rôle|ID> [@rôle2...]`");
-            let added = 0;
-            for (const id of rIds) {
-                if (!config.autoroleIds.includes(id)) {
-                    config.autoroleIds.push(id);
-                    added++;
-                }
-            }
-            saveBotData();
-            return message.reply(`✅ Autorole mis à jour (${added} ajouté(s)) : ${rIds.map(id => `<@&${id}>`).join(', ')}`);
-        }
-
-        if (sub === 'remove') {
-            const rIds = extractRoleIds();
-            if (rIds.length === 0) return message.reply("Utilisation : `=autorole remove <@rôle|ID>`");
-            config.autoroleIds = config.autoroleIds.filter(id => !rIds.includes(id));
-            saveBotData();
-            return message.reply(`✅ Rôle(s) retiré(s) de l'autorole : ${rIds.map(id => `<@&${id}>`).join(', ')}`);
-        }
-
-        if (sub === 'list') {
-            if (config.autoroleIds.length === 0) return message.reply("📋 Aucun rôle configuré en autorole.");
-            return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🎭 Autoroles').setDescription(config.autoroleIds.map(id => `• <@&${id}> (\`${id}\`)`).join('\n'))] });
-        }
-
-        if (sub === 'clear') {
-            config.autoroleIds = [];
-            saveBotData();
-            return message.reply("🗑️ Autoroles réinitialisés.");
-        }
-
-        return message.reply("Utilisation : `=autorole <add|remove|list|clear> [@rôles|IDs]`");
-    }
-
-    if (command === 'panelrole') {
-        if (!requireRank(3)) return;
-        const targetChannel = message.mentions.channels.first();
-        if (!targetChannel) {
-            return message.reply("Utilisation : `=panelrole <#salon> <@rôle|ID> | <Titre> | <Description> | [LabelBouton]`");
-        }
-        const afterChan = args.slice(1);
-        const role = await fetchTargetRole(message, afterChan[0]);
-        if (!role) {
-            return message.reply("❌ Rôle invalide. Utilisation : `=panelrole <#salon> <@rôle|ID> | <Titre> | <Description> | [LabelBouton]`");
-        }
-
-        const rawRest = afterChan.slice(1).join(' ');
-        const parts = rawRest.split('|').map(p => p.trim());
-        const title = parts[0] || "🎭 Rôle du serveur";
-        const description = parts[1] || "Clique sur le bouton ci-dessous pour obtenir ton rôle.";
-        const btnLabel = parts[2] || "Obtenir le rôle";
-
-        const embed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(title)
-            .setDescription(description);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('role_panel_claim')
-                .setLabel(btnLabel)
-                .setEmoji('🎭')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-        const sent = await targetChannel.send({ embeds: [embed], components: [row] });
-        config.rolePanel = {
-            channelId: targetChannel.id,
-            messageId: sent.id,
-            title,
-            description,
-            buttonLabel: btnLabel,
-            buttonEmoji: '🎭',
-            roleId: role.id
-        };
-        saveBotData();
-        return message.reply(`✅ Panel rôle publié dans ${targetChannel} pour le rôle <@&${role.id}>. Utilise \`=editpanel <description>\` pour modifier la description.`);
-    }
-
-    if (command === 'editpanel') {
-        if (!requireRank(3)) return;
-        const newDesc = args.join(' ').trim();
-        if (!newDesc) return message.reply("Utilisation : `=editpanel <Nouvelle description>`");
-        if (!config.rolePanel || !config.rolePanel.channelId || !config.rolePanel.messageId) {
-            return message.reply("❌ Aucun panel rôle actif. Crée-en un d'abord avec `=panelrole`.");
-        }
-        const chan = message.guild.channels.cache.get(config.rolePanel.channelId);
-        if (!chan) return message.reply("❌ Salon du panel introuvable.");
-
-        try {
-            const msg = await chan.messages.fetch(config.rolePanel.messageId);
-            config.rolePanel.description = newDesc;
-            saveBotData();
-
-            const updatedEmbed = new EmbedBuilder()
-                .setColor('#2b2d31')
-                .setTitle(config.rolePanel.title)
-                .setDescription(newDesc);
-
-            const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder()
-                    .setCustomId('role_panel_claim')
-                    .setLabel(config.rolePanel.buttonLabel || 'Obtenir le rôle')
-                    .setEmoji(config.rolePanel.buttonEmoji || '🎭')
-                    .setStyle(ButtonStyle.Primary)
-            );
-
-            await msg.edit({ embeds: [updatedEmbed], components: [row] });
-            return message.reply("✅ Description du panel rôle mise à jour !");
-        } catch (e) {
-            return message.reply("❌ Impossible de modifier le message du panel.");
-        }
-    }
-
-    if (command === 'antiraid') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'on' || sub === 'off') {
-            config.antiraid = (sub === 'on');
-            saveBotData();
-            return message.reply(`🛡️ Anti-Raid réglé sur **${sub.toUpperCase()}**`);
-        }
-        return message.reply(`🛡️ Anti-Raid actuel : **${config.antiraid ? 'ON' : 'OFF'}** (Limite : ${config.antiraidLimit} joins / ${config.antiraidWindowMs / 1000}s). Utilisation : \`=antiraid <on|off>\``);
-    }
-
-    if (command === 'lockdown') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-        if (sub !== 'on' && sub !== 'off') return message.reply("Utilisation : `=lockdown <on|off>`");
-        const denySend = (sub === 'on') ? false : null;
-        config.lockdown = (sub === 'on');
-        saveBotData();
-
-        let count = 0;
-        for (const [, ch] of message.guild.channels.cache) {
-            if (ch.type === ChannelType.GuildText) {
-                await ch.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: denySend }).catch(() => {});
-                count++;
-            }
-        }
-        return message.reply(sub === 'on' ? `🔒 **LOCKDOWN ACTIVÉ** sur ${count} salons textuels.` : `🔓 **LOCKDOWN DÉSACTIVÉ** sur ${count} salons textuels.`);
-    }
-    if (command === 'autoping') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-
-        const extractChannelIds = () => {
-            const ids = new Set();
-            for (const [, ch] of message.mentions.channels) {
-                ids.add(ch.id);
-            }
-            for (const raw of args.slice(1)) {
-                const clean = raw.replace(/<#(\d+)>/, '$1');
-                if (/^\d{15,22}$/.test(clean) && message.guild.channels.cache.has(clean)) {
-                    ids.add(clean);
-                }
-            }
-            return Array.from(ids);
-        };
-
-        if (sub === 'add') {
-            const chanIds = extractChannelIds();
-            if (chanIds.length === 0) return message.reply("Utilisation : `=autoping add <#salon1> [#salon2 ...]`");
-            let added = 0;
-            for (const id of chanIds) {
-                if (!config.autopingChannels.includes(id)) {
-                    config.autopingChannels.push(id);
-                    added++;
-                }
-            }
-            saveBotData();
-            const formatted = chanIds.map(id => `<#${id}>`).join(', ');
-            return message.reply(`✅ Autoping mis à jour (${added} ajouté(s)) : ${formatted}`);
-        }
-
-        if (sub === 'remove') {
-            const chanIds = extractChannelIds();
-            if (chanIds.length === 0) return message.reply("Utilisation : `=autoping remove <#salon1> [#salon2 ...]`");
-            config.autopingChannels = config.autopingChannels.filter(id => !chanIds.includes(id));
-            saveBotData();
-            const formatted = chanIds.map(id => `<#${id}>`).join(', ');
-            return message.reply(`✅ Salon(s) retiré(s) de l'autoping : ${formatted}`);
-        }
-
-        if (sub === 'list') {
-            if (config.autopingChannels.length === 0) {
-                return message.reply("📋 Aucun salon configuré pour l'autoping.");
-            }
-            const list = config.autopingChannels.map(id => `• <#${id}> (\`${id}\`)`).join('\n');
-            return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('🔔 Salons Autoping').setDescription(list)] });
-        }
-
-        if (sub === 'clear') {
-            config.autopingChannels = [];
-            saveBotData();
-            return message.reply("🗑️ Tous les salons d'autoping ont été retirés.");
-        }
-
-        return message.reply("Utilisation : `=autoping <add|remove|list|clear> [#salons]`");
-    }
-
-    if (command === 'antilink') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'on' || sub === 'off') {
-            config.antilink = (sub === 'on');
-            saveBotData();
-            return message.reply(`🛡️ Anti-Link réglé sur **${sub.toUpperCase()}**`);
-        }
-        return message.reply("Utilisation : `=antilink on / off`");
-    }
-
-    if (command === 'setantilink') {
-        if (!requireRank(3)) return;
-        const action = args[0]?.toLowerCase();
-        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
-        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
-        config.antilinkAction = action;
-        saveBotData();
-        return message.reply(`🛡️ Sanction Anti-Link mise à jour : \`${action}\``);
-    }
-
-    if (command === 'antispam') {
-        if (!requireRank(3)) return;
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'on' || sub === 'off') {
-            config.antispam = (sub === 'on');
-            saveBotData();
-            return message.reply(`🛡️ Anti-Spam réglé sur **${sub.toUpperCase()}**`);
-        }
-        return message.reply("Utilisation : `=antispam on / off`");
-    }
-
-    if (command === 'setantispam') {
-        if (!requireRank(3)) return;
-        const action = args[0]?.toLowerCase();
-        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
-        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
-        config.antispamAction = action;
-        saveBotData();
-        return message.reply(`🛡️ Sanction Anti-Spam mise à jour : \`${action}\``);
-    }
-
-    if (command === 'antibot') {
-        if (!requireRank(4)) return;
-        const sub = args[0]?.toLowerCase();
-        if (sub === 'on' || sub === 'off') {
-            config.antibot = (sub === 'on');
-            saveBotData();
-            return message.reply(`🛡️ Anti-Bot réglé sur **${sub.toUpperCase()}** par le Super Owner.`);
-        }
-        return message.reply("Utilisation : `=antibot on / off`");
-    }
-
-    if (command === 'setantibot') {
-        if (!requireRank(4)) return;
-        const action = args[0]?.toLowerCase();
-        const validActions = ['delete', 'warn', 'mute', 'kick', 'jail', 'ban'];
-        if (!validActions.includes(action)) return message.reply(`❌ Action invalide. Choix : \`${validActions.join(', ')}\``);
-        config.antibotAction = action;
-        saveBotData();
-        return message.reply(`🛡️ Sanction Anti-Bot mise à jour : \`${action}\``);
-    }
-
-    if (command === 'setalertrole') {
-        if (!requireRank(3)) return;
-        if (!targetArg || targetArg.toLowerCase() === 'none' || targetArg.toLowerCase() === 'off') {
-            config.alertRoleId = null;
-            saveBotData();
-            return message.reply("✅ Rôle d'alerte sécurité retiré.");
-        }
-        const role = await fetchTargetRole(message, targetArg);
-        if (!role) return message.reply("Utilisation : `=setalertrole <@rôle|ID|none>`");
-        config.alertRoleId = role.id;
-        saveBotData();
-        return message.reply(`🚨 Rôle d'alerte sécurité défini sur <@&${role.id}> (pingé lors des alertes sécurité dans les logs).`);
-    }
-
-    if (command === 'gay') {
-        const target = message.mentions.users.first() || message.author;
-        const percent = Math.floor(Math.random() * 101);
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('🏳️‍🌈 Test Gay').setDescription(`**${target.username}** est à **${percent}%** gay !`);
-        return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'iq') {
-        const target = message.mentions.users.first() || message.author;
-        const iq = Math.floor(Math.random() * 160) - 20;
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('🧠 Test de QI').setDescription(`Le QI de **${target.username}** est estimé à **${iq}** !`);
-        return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'rate') {
-        const subject = args.join(' ') || "quelque chose";
-        const score = Math.floor(Math.random() * 11);
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('⭐ Rate System').setDescription(`Note : **${score}/10** pour *${subject}*`);
-        return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'horoscope') {
-        const sign = args[0] || "ton signe";
-        const preds = ["Journée calme.", "Grosse rentrée d'argent !", "Attention à toi.", "Reste chill."];
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle(`🔮 Horoscope : ${sign}`).setDescription(preds[Math.floor(Math.random()*preds.length)]);
-        return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'kiss') {
-        const target = message.mentions.users.first();
-        if (!target) return message.reply("❌ Mentionne quelqu'un !");
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle('💋 Bisou').setDescription(`**${message.author}** fait un bisou à **${target}** ! ❤️`);
-        return message.reply({ embeds: [embed] });
-    }
-
-    if (command === 'owner') {
-        if (!requireRank(4)) return;
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisation : `=owner <@user|ID>`");
-        if (targetUser.id === SUPER_OWNER_ID) return message.reply("❌ Action impossible sur le Super Owner.");
-        botOwners.add(targetUser.id);
-        saveBotData();
-        return message.reply(`✅ **${targetUser.tag}** ajouté aux owners du bot.`);
-    }
-
-    if (command === 'unowner') {
-        if (!requireRank(4)) return;
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Utilisation : `=unowner <@user|ID>`");
-        if (targetUser.id === SUPER_OWNER_ID) return message.reply("❌ Impossible de retirer le Super Owner principal !");
-        botOwners.delete(targetUser.id);
-        saveBotData();
-        return message.reply(`✅ **${targetUser.tag}** retiré des owners du bot.`);
-    }
-
-    if (command === 'admin') {
-        if (!requireRank(3)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("Utilisation : `=admin <@membre|ID>`");
-        const targetRank = getUserRankLevel(message, targetMember.id);
-        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
-        const staff = getStaffRoles(message.guild.id);
-        staff.mods.delete(targetMember.id);
-        staff.admins.add(targetMember.id);
-        saveBotData();
-        return message.reply(`✅ **${targetMember.user.tag}** défini comme Admin bot.`);
-    }
-
-    if (command === 'unadmin') {
-        if (!requireRank(3)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("Utilisation : `=unadmin <@membre|ID>`");
-        const targetRank = getUserRankLevel(message, targetMember.id);
-        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
-        const staff = getStaffRoles(message.guild.id);
-        staff.admins.delete(targetMember.id);
-        saveBotData();
-        return message.reply(`✅ **${targetMember.user.tag}** retiré des Admins bot.`);
-    }
-
-    if (command === 'mod') {
-        if (!requireRank(2)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("Utilisation : `=mod <@membre|ID>`");
-        const targetRank = getUserRankLevel(message, targetMember.id);
-        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
-        const staff = getStaffRoles(message.guild.id);
-        staff.mods.add(targetMember.id);
-        saveBotData();
-        return message.reply(`✅ **${targetMember.user.tag}** défini comme Modo bot.`);
-    }
-
-    if (command === 'unmod') {
-        if (!requireRank(2)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("Utilisation : `=unmod <@membre|ID>`");
-        const targetRank = getUserRankLevel(message, targetMember.id);
-        if (targetRank >= authorRank) return message.reply(NO_PERM_MSG);
-        const staff = getStaffRoles(message.guild.id);
-        staff.mods.delete(targetMember.id);
-        saveBotData();
-        return message.reply(`✅ **${targetMember.user.tag}** retiré des Modos bot.`);
-    }
-
-    if (command === 'owners') {
-        const ownerList = Array.from(botOwners).map(id => `┗ ID : \`${id}\``).join('\n');
-        return message.reply({ embeds: [new EmbedBuilder().setColor('#2b2d31').setTitle('👑 Owners').setDescription(ownerList)] });
-    }
-    if (command === 'stats') {
-        const guild = message.guild;
-        await guild.members.fetch();
-        const totalMembers = guild.memberCount;
-        const onlineMembers = guild.members.cache.filter(m => m.presence && m.presence.status !== 'offline').size;
-        const voiceMembersCount = guild.members.cache.filter(m => m.voice && m.voice.channelId).size;
-        const botCount = guild.members.cache.filter(m => m.user.bot).size;
-        const humanCount = totalMembers - botCount;
-        const boostCount = guild.premiumSubscriptionCount || 0;
-        const boostTier = guild.premiumTier;
-
-        const statsEmbed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(`📊 Statistiques du serveur : ${guild.name}`)
-            .setThumbnail(guild.iconURL({ dynamic: true }))
-            .addFields(
-                { name: '👥 Membres', value: `Total : \`${totalMembers}\`\nHumains : \`${humanCount}\`\nBots : \`${botCount}\``, inline: true },
-                { name: '🟢 Activité', value: `En ligne : \`${onlineMembers}\`\nEn vocal : \`${voiceMembersCount}\``, inline: true },
-                { name: '🚀 Boosts', value: `Niveau : \`${boostTier}\`\nBoosts : \`${boostCount}\``, inline: true },
-                { name: '👑 Propriétaire', value: `<@${guild.ownerId}>`, inline: true },
-                { name: '📅 Création', value: `<t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: true }
-            )
-            .setTimestamp();
-
-        return message.reply({ embeds: [statsEmbed] });
-    }
-
-    if (command === 'userinfo') {
-        const targetMember = await fetchTargetMember(message, targetArg) || message.member;
-        const user = targetMember.user;
-        const roles = targetMember.roles.cache
-            .filter(r => r.id !== message.guild.id)
-            .sort((a, b) => b.position - a.position)
-            .map(r => `<@&${r.id}>`)
-            .slice(0, 10)
-            .join(', ') || 'Aucun rôle';
-
-        const infoEmbed = new EmbedBuilder()
-            .setColor(targetMember.displayHexColor !== '#000000' ? targetMember.displayHexColor : '#2b2d31')
-            .setTitle(`👤 Informations : ${user.tag}`)
-            .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 512 }))
-            .addFields(
-                { name: '🆔 ID', value: `\`${user.id}\``, inline: true },
-                { name: '📆 Création du compte', value: `<t:${Math.floor(user.createdTimestamp / 1000)}:R>`, inline: true },
-                { name: '📥 Arrivée sur le serveur', value: `<t:${Math.floor(targetMember.joinedTimestamp / 1000)}:R>`, inline: true },
-                { name: `🏷️ Rôles (${targetMember.roles.cache.size - 1})`, value: roles }
-            )
-            .setTimestamp();
-
-        return message.reply({ embeds: [infoEmbed] });
-    }
-
-    if (command === 'avatar') {
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg) || message.author;
-        const avatarEmbed = new EmbedBuilder()
-            .setColor('#2b2d31')
-            .setTitle(`🖼️ Avatar de ${targetUser.username}`)
-            .setImage(targetUser.displayAvatarURL({ dynamic: true, size: 1024 }));
-        return message.reply({ embeds: [avatarEmbed] });
-    }
-
-    if (command === 'ping') {
-        const sent = await message.reply('🏓 Calcul de la latence...');
-        const latency = sent.createdTimestamp - message.createdTimestamp;
-        return sent.edit(`🏓 **Pong !**\nLatence Bot : \`${latency}ms\`\nLatence API Discord : \`${Math.round(client.ws.ping)}ms\``);
-    }
-
-    if (command === 'ticketsetup') {
-        if (!requireRank(3)) return;
-        return message.reply({ embeds: [getTicketDashboardEmbed(message.guild, config)], components: getTicketDashboardRows() });
-    }
-
-    if (command === 'ticketadd') {
-        if (!requireRank(3)) return;
-        const name = args[0];
-        const emoji = args[1] || '🎫';
-        if (!name) return message.reply("Utilisation : `=ticketadd <Nom> <Emoji>`");
-        
-        const tConfig = config.ticketConfig;
-        const newId = `ticket_${name.toLowerCase()}`;
-        if (tConfig.categories.some(c => c.id === newId)) return message.reply("❌ Cette catégorie existe déjà.");
-        
-        tConfig.categories.push({ id: newId, name: name, emoji: emoji, categoryId: null, roleId: null, description: `Ouvrir un ticket ${name}` });
-        saveBotData();
-        return message.reply(`✅ Type de ticket **${name}** (${emoji}) ajouté ! Ouvre \`=ticketsetup\` pour voir les changements.`);
-    }
-
-    if (command === 'ticketremove') {
-        if (!requireRank(3)) return;
-        const typeName = args[0]?.toLowerCase();
-        if (!typeName) return message.reply("Utilisation : `=ticketremove <Nom>`");
-        const tConfig = config.ticketConfig;
-        const initialLen = tConfig.categories.length;
-        tConfig.categories = tConfig.categories.filter(c => c.name.toLowerCase() !== typeName && c.id !== `ticket_${typeName}`);
-        if (tConfig.categories.length === initialLen) return message.reply("❌ Type de ticket introuvable.");
-        saveBotData();
-        return message.reply(`✅ Type de ticket **${typeName}** supprimé !`);
-    }
-
-    if (command === 'setticketpanel') {
-        if (!requireRank(3)) return;
-        const channel = message.mentions.channels.first();
-        if (!channel) return message.reply("Utilisation : `=setticketpanel <#salon>`");
-        config.ticketConfig.panelChannel = channel.id;
-        saveBotData();
-        return message.reply(`✅ Salon du panneau défini sur ${channel} !`);
-    }
-
-    if (command === 'setticketcat') {
-        if (!requireRank(3)) return;
-        const catId = args[0];
-        if (!catId) return message.reply("Utilisation : `=setticketcat <ID_Catégorie>`");
-        config.ticketConfig.categoryDestination = catId;
-        saveBotData();
-        return message.reply(`✅ Catégorie globale par défaut définie : \`${catId}\``);
-    }
-
-    if (command === 'setticketcatid') {
-        if (!requireRank(3)) return;
-        const catId = args[0];
-        const ticketName = args.slice(1).join(' ').toLowerCase();
-        if (!catId || !ticketName) return message.reply("Utilisation : `=setticketcatid <ID_Catégorie> <Nom_Du_Ticket>`");
-        
-        const tConfig = config.ticketConfig;
-        const ticketCat = tConfig.categories.find(c => c.name.toLowerCase() === ticketName || c.id === `ticket_${ticketName}`);
-        if (!ticketCat) return message.reply(`❌ Aucun type de ticket trouvé avec le nom \`${ticketName}\`.`);
-        
-        ticketCat.categoryId = catId;
-        saveBotData();
-        return message.reply(`✅ Le type de ticket **${ticketCat.name}** s'ouvrira désormais dans la catégorie ID : \`${catId}\``);
-    }
-
-    if (command === 'setticketrole') {
-        if (!requireRank(3)) return;
-        const role = await fetchTargetRole(message, args[0]);
-        const ticketName = args.slice(1).join(' ').toLowerCase();
-        if (!role || !ticketName) return message.reply("Utilisation : `=setticketrole <@rôle|ID> <Nom_Du_Ticket>`");
-
-        const tConfig = config.ticketConfig;
-        const ticketCat = tConfig.categories.find(c => c.name.toLowerCase() === ticketName || c.id === `ticket_${ticketName}`);
-        if (!ticketCat) return message.reply(`❌ Aucun type de ticket trouvé avec le nom \`${ticketName}\`.`);
-
-        ticketCat.roleId = role.id;
-        saveBotData();
-        return message.reply(`✅ Le rôle **${role.name}** aura désormais accès et sera ping à chaque ouverture de ticket **${ticketCat.name}** !`);
-    }
-
-    if (command === 'setticketlog') {
-        if (!requireRank(3)) return;
-        const channel = message.mentions.channels.first();
-        if (!channel) return message.reply("Utilisation : `=setticketlog <#salon>`");
-        config.ticketConfig.logChannel = channel.id;
-        saveBotData();
-        return message.reply(`✅ Salon logs / transcripts défini sur ${channel} !`);
-    }
-
-    if (command === 'settickettitle') {
-        if (!requireRank(3)) return;
-        const newTitle = args.join(' ');
-        if (!newTitle) return message.reply("Utilisation : `=settickettitle <Titre>`");
-        config.ticketConfig.title = newTitle;
-        saveBotData();
-        return message.reply(`✅ Titre mis à jour : **${newTitle}**`);
-    }
-
-    if (command === 'setticketdesc') {
-        if (!requireRank(3)) return;
-        const newDesc = args.join(' ');
-        if (!newDesc) return message.reply("Utilisation : `=setticketdesc <Description>`");
-        config.ticketConfig.description = newDesc;
-        saveBotData();
-        return message.reply("✅ Description mise à jour.");
-    }
-
-    if (command === 'setticketimage') {
-        if (!requireRank(3)) return;
-        const url = args[0];
-        if (!url) return message.reply("Utilisation : `=setticketimage <url|none>`");
-        config.ticketConfig.imageUrl = (url.toLowerCase() === 'none') ? null : url;
-        saveBotData();
-        return message.reply("✅ Image / GIF du panneau mis à jour.");
-    }
-
-    if (command === 'closeticket') {
-        if (!requireRank(1)) return;
-        const channel = message.channel;
-        if (!channel.name.includes('-')) return message.reply("❌ Cette commande s'utilise uniquement dans un salon de ticket.");
-        await message.reply("🔒 Fermeture du ticket en cours...");
-        setTimeout(() => channel.delete().catch(() => {}), 2000);
-        return;
-    }
-    if (command === 'jail') {
-        if (!requireRank(2)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        const reason = args.slice(1).join(' ') || "Aucune raison";
-        if (!targetMember) return message.reply("❌ Mentionne un membre.");
-        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        try {
-            const botRolePos = message.guild.members.me.roles.highest.position;
-            const roleIds = targetMember.roles.cache.filter(r => r.id !== message.guild.id && !r.managed && r.position < botRolePos).map(r => r.id);
-            jailDataMap.set(targetMember.id, roleIds);
-            saveBotData();
-            if (roleIds.length > 0) await targetMember.roles.remove(roleIds).catch(() => {});
-
-            const jailChan = await message.guild.channels.create({
-                name: `jail-${targetMember.user.username}`,
-                type: ChannelType.GuildText,
-                permissionOverwrites: [
-                    { id: message.guild.roles.everyone.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-                    { id: targetMember.id, allow: [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages] }
-                ]
-            });
-            await jailChan.send({ content: `<@${targetMember.id}>`, embeds: [new EmbedBuilder().setTitle('🔒 PRISON').setDescription(`Raison : ${reason}`)] });
-            return message.reply(`🔒 Membre en prison : ${jailChan}`);
-        } catch (e) { return message.reply("❌ Erreur."); }
-    }
-
-    if (command === 'unjail') {
-        if (!requireRank(2)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("❌ Mentionne un membre.");
-        try {
-            const savedRoles = jailDataMap.get(targetMember.id);
-            if (savedRoles && savedRoles.length > 0) {
-                await targetMember.roles.add(savedRoles).catch(() => {});
-                jailDataMap.delete(targetMember.id);
-                saveBotData();
-            }
-            const jailChan = message.guild.channels.cache.find(c => c.name === `jail-${targetMember.user.username.toLowerCase()}`);
-            if (jailChan) await jailChan.delete().catch(() => {});
-            return message.reply(`🔓 **${targetMember.user.tag}** libéré.`);
-        } catch (e) { return message.reply("❌ Erreur."); }
-    }
-
-    if (command === 'lock') {
-        if (!requireRank(1)) return;
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: false });
-        return message.reply("🔒 Salon verrouillé.");
-    }
-
-    if (command === 'unlock') {
-        if (!requireRank(1)) return;
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { SendMessages: null });
-        return message.reply("🔓 Salon déverrouillé.");
-    }
-
-    if (command === 'hide') {
-        if (!requireRank(1)) return;
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: false });
-        return message.reply("🙈 Salon caché pour tout le monde.");
-    }
-
-    if (command === 'unhide') {
-        if (!requireRank(1)) return;
-        await message.channel.permissionOverwrites.edit(message.guild.roles.everyone, { ViewChannel: null });
-        return message.reply("🐵 Salon visible à nouveau.");
-    }
-
-    if (command === 'mute') {
-        if (!requireRank(1)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        const durationStr = args[1];
-        const reason = args.slice(2).join(' ') || "Aucune raison";
-        if (!targetMember || !durationStr) return message.reply("Utilisation : `=mute <@membre> <durée> [raison]`");
-        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        const ms = parseDuration(durationStr);
-        if (!ms) return message.reply("❌ Durée invalide.");
-        await targetMember.timeout(ms, reason);
-        return message.reply(`🔇 **${targetMember.user.tag}** mute.`);
-    }
-
-    if (command === 'warn') {
-        if (!requireRank(1)) return;
-        const targetMember = await fetchTargetMember(message, targetArg);
-        if (!targetMember) return message.reply("❌ Mentionne un membre.");
-        if (getUserRankLevel(message, targetMember.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        const reason = args.slice(1).join(' ') || "Aucune raison";
-        let userWarns = warningsMap.get(targetMember.id) || [];
-        userWarns.push({ reason, moderator: message.author.tag });
-        warningsMap.set(targetMember.id, userWarns);
-        saveBotData();
-        return message.reply(`⚠️ Warn enregistré (${userWarns.length}).`);
-    }
-
-    if (command === 'setlog') {
-        if (!requireRank(3)) return;
-        const channel = message.mentions.channels.first() || message.channel;
-        config.logChannel = channel.id;
-        saveBotData();
-        return message.reply(`✅ Salon de logs défini sur ${channel} !`);
-    }
-
-    if (command === 'setwelcome') {
-        if (!requireRank(3)) return;
-        const channel = message.mentions.channels.first();
-        const welcomeText = args.slice(1).join(' ');
-        if (!channel || !welcomeText) return message.reply("Utilisation : `=setwelcome <#salon> <message>`");
-        config.welcomeChannel = channel.id;
-        config.welcomeText = welcomeText;
-        saveBotData();
-        return message.reply(`✅ Salon de bienvenue configuré !`);
-    }
-
-    if (command === 'gcreate') {
-        if (!requireRank(2)) return;
-        const duration = args[0], winnersCount = parseInt(args[1]), prize = args.slice(2).join(' ');
-        if (!duration || isNaN(winnersCount) || !prize) return message.reply("Utilisation : `=gcreate <durée> <gagnants> <prix>`");
-        const embed = new EmbedBuilder().setColor('#2b2d31').setTitle("🎉 GIVEAWAY 🎉").setDescription(`**Lot :** ${prize}\n**Gagnants :** ${winnersCount}`);
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('join_giveaway').setLabel('🎉 Participer').setStyle(ButtonStyle.Success));
-        await message.channel.send({ embeds: [embed], components: [row] });
-        return message.reply("🎉 Giveaway lancé !");
-    }
-
-    if (command === 'bl') {
-        if (!requireRank(2)) return;
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("ID ou mention invalide.");
-        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        await message.guild.members.ban(targetUser.id);
-        return message.reply(`🔨 **${targetUser.tag}** banni.`);
-    }
-
-    else if (command === 'softbl') {
-        if (!requireRank(2)) return;
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("ID invalide.");
-        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        await message.guild.members.ban(targetUser.id, { deleteMessageSeconds: 604800 });
-        await message.guild.members.unban(targetUser.id);
-        return message.reply(`🌪️ Softban effectué.`);
-    }
-
-    else if (command === 'unbl') {
-        if (!requireRank(2)) return;
-        const userId = targetArg?.replace(/<@!?|>/g, '');
-        if (!userId) return message.reply("ID requis.");
-        await message.guild.members.unban(userId);
-        return message.reply(`🔓 Débanni.`);
-    }
-
-    else if (command === 'blist') {
-        if (!requireRank(2)) return;
-        const bans = await message.guild.bans.fetch();
-        const banList = bans.map(b => `• **${b.user.tag}**`).slice(0, 15).join('\n') || "Aucun.";
-        return message.reply({ embeds: [new EmbedBuilder().setTitle("🔨 Bannissements").setDescription(banList)] });
-    }
-
-    else if (command === 'unbanall') {
-        if (!requireRank(3)) return;
-        const bans = await message.guild.bans.fetch();
-        for (const [id] of bans) await message.guild.members.unban(id).catch(() => {});
-        return message.reply(`🔓 Tous débannis (${bans.size}).`);
-    }
-
-    else if (command === 'kick') {
-        if (!requireRank(2)) return;
-        const targetUser = await fetchTargetUser(client, message.guild, targetArg);
-        if (!targetUser) return message.reply("Membre introuvable.");
-        if (getUserRankLevel(message, targetUser.id) >= authorRank) return message.reply(NO_PERM_MSG);
-        const member = await message.guild.members.fetch(targetUser.id).catch(() => null);
-        if (!member) return message.reply("Membre introuvable.");
-        await member.kick();
-        return message.reply(`✅ Expulsé.`);
-    }
-
-    else if (command === 'clear') {
-        if (!requireRank(1)) return;
-        const count = parseInt(args[0]);
-        if (isNaN(count) || count < 1 || count > 50) return message.reply("❌ Entre 1 et 50.");
-        await message.delete().catch(() => {});
-        const fetched = await message.channel.messages.fetch({ limit: count });
-        await message.channel.bulkDelete(fetched, true);
-        return;
-    }
-
-    else if (command === 'purge') {
-        if (!requireRank(1)) return;
-        const targetUser = await fetchTargetMember(message, targetArg);
-        if (!targetUser) return message.reply("Membre introuvable.");
-        const fetched = await message.channel.messages.fetch({ limit: 100 });
-        const userMsgs = fetched.filter(m => m.author.id === targetUser.id).first(30);
-        await message.channel.bulkDelete(userMsgs, true);
-        return;
-    }
-
-    else if (command === 'snipe') {
-        const sniped = snipeCache.get(message.channel.id);
-        if (!sniped) return message.reply("❌ Aucun message.");
-        return message.reply({ embeds: [new EmbedBuilder().setAuthor({ name: sniped.author }).setDescription(sniped.content)] });
-    }
-
-    else if (command === 'slowmode') {
-        if (!requireRank(1)) return;
-        const sec = parseInt(args[0]);
-        if (isNaN(sec) || sec < 0) return message.reply("❌ Durée invalide.");
-        await message.channel.setRateLimitPerUser(sec);
-        return message.reply(`⏱️ Mode lent : ${sec}s.`);
-    }
-
-    else if (command === 'renew') {
-        if (!requireRank(2)) return;
-        const newChan = await message.channel.clone();
-        await message.channel.delete();
-        newChan.send("🔄 Salon régénéré !");
-    }
-
-    else if (command === 'createtext') {
-        if (!requireRank(2)) return;
-        const chanName = args.join('-');
-        if (!chanName) return message.reply("Utilisation : `=createtext <nom>`");
-        await message.guild.channels.create({ name: chanName, type: ChannelType.GuildText });
-        return message.reply("✅ Salon texte créé.");
-    }
-
-    else if (command === 'createvoice') {
-        if (!requireRank(2)) return;
-        const chanName = args.join(' ');
-        if (!chanName) return message.reply("Utilisation : `=createvoice <nom>`");
-        await message.guild.channels.create({ name: chanName, type: ChannelType.GuildVoice });
-        return message.reply("✅ Salon vocal créé.");
-    }
-
-    else if (command === 'addrole') {
-        if (!requireRank(2)) return;
-        const member = await fetchTargetMember(message, targetArg);
-        const role = await fetchTargetRole(message, args[1]);
-        if (!member || !role) return message.reply("Utilisation : `=addrole <@membre> <@rôle|ID>`");
-        
-        if (!isSuperOwner(message)) {
-            const authorHighest = message.member.roles.highest.position;
-            const botHighest = message.guild.members.me.roles.highest.position;
-
-            if (role.position >= authorHighest) {
-                return message.reply("❌ Tu ne peux pas attribuer un rôle supérieur ou égal à ton propre rôle le plus haut.");
-            }
-            if (role.position >= botHighest) {
-                return message.reply("❌ Je ne peux pas attribuer ce rôle car il est supérieur ou égal au mien.");
-            }
-        }
-
-        try {
-            await member.roles.add(role);
-            return message.reply(`✅ Rôle ${role.name} ajouté à ${member.user.tag}.`);
-        } catch (e) {
-            return message.reply("❌ Erreur lors de l'ajout du rôle (Vérifie mes permissions).");
-        }
-    }
-
-    else if (command === 'delrole') {
-        if (!requireRank(2)) return;
-        const member = await fetchTargetMember(message, targetArg);
-        const role = await fetchTargetRole(message, args[1]);
-        if (!member || !role) return message.reply("Utilisation : `=delrole <@membre> <@rôle|ID>`");
-
-        if (!isSuperOwner(message)) {
-            const authorHighest = message.member.roles.highest.position;
-            const botHighest = message.guild.members.me.roles.highest.position;
-
-            if (role.position >= authorHighest) {
-                return message.reply("❌ Tu ne peux pas retirer un rôle supérieur ou égal à ton propre rôle le plus haut.");
-            }
-            if (role.position >= botHighest) {
-                return message.reply("❌ Je ne peux pas retirer ce rôle car il est supérieur ou égal au mien.");
-            }
-        }
-
-        try {
-            await member.roles.remove(role);
-            return message.reply(`✅ Rôle ${role.name} retiré à ${member.user.tag}.`);
-        } catch (e) {
-            return message.reply("❌ Erreur lors du retrait du rôle (Vérifie mes permissions).");
-        }
-    }
+    const cmd = (args.shift() || '').toLowerCase();
+    if (cmd === 'setcasino' || cmd === 'casinochannel') {
+        if (!isSuperOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Réservé au Super Owner.' });
+        const sub = (args[0] || '').toLowerCase();
+        if (sub === 'off' || sub === 'reset' || sub === 'clear') { setGuildCasinoCategory(message.guild.id, null); return replyContainer(message, { title: '🔓 Restriction désactivée', body: 'Kyuro Casino fonctionne dans tous les salons.' }); }
+        const categoryId = await resolveCategoryIdFromInput(message, args[0]);
+        if (!categoryId) return replyContainer(message, { title: '❌ Catégorie introuvable', body: 'Indique un ID de catégorie (`*setcasino <ID>`).' });
+        const catChannel = await message.guild.channels.fetch(categoryId).catch(() => null);
+        setGuildCasinoCategory(message.guild.id, categoryId);
+        return replyContainer(message, { title: '🎰 Catégorie configurée', body: `Salon/catégorie actif : **${catChannel ? catChannel.name : categoryId}**.` });
+    }
+    if (cmd === 'owner' || cmd === 'unowner') {
+        if (!isSuperOwner(message.author)) return replyContainer(message, { title: '⛔ Accès refusé', body: 'Seul le Super Owner peut gérer les owners.' });
+        const targetId = (message.mentions.users.first()?.id || args[0] || '').replace(/[<@!>]/g, '').trim();
+        if (!targetId) return replyContainer(message, { title: '👑 Owners', body: `Utilisation : \`*${cmd} <id>\`` });
+        if (!Array.isArray(db.owners)) db.owners = [];
+        if (cmd === 'owner') { if (!db.owners.includes(targetId)) { db.owners.push(targetId); saveData(); } return replyContainer(message, { title: '👑 Owner ajouté', body: `**${targetId}** est désormais Owner.` }); }
+        db.owners = db.owners.filter((id) => id !== targetId); saveData();
+        return replyContainer(message, { title: '👑 Owner retiré', body: `**${targetId}** n'est plus Owner.` });
+    }
+    if (!isAllowedCasinoChannel(message)) return;
+    getUser(message.author.id, message.author);
+    if (cmd === 'enchère' || cmd === 'enchere') return handleAuctionCreate(message, args);
+    if (cmd === 'reseteconomy') { if (!isBotOwner(message.author)) return; db = { users: {}, cryptos: JSON.parse(JSON.stringify(DEFAULT_CRYPTOS)), casinoCategories: db.casinoCategories || {}, owners: db.owners || [] }; saveData(); return replyContainer(message, { title: '♻️ Reset OK', body: 'Économie remise à **0 $**.' }); }
+    if (cmd === 'setmoney') { if (!isBotOwner(message.author)) return; const t = message.mentions.users.first(), amt = parseAmount(args[1], 1e9); if (!t || !amt) return; const tu = getUser(t.id, t); tu.cash = amt; saveData(); return replyContainer(message, { title: '💰 Setmoney', body: `Cash de **${tu.username}** : **${formatMoney(amt)}**.` }); }
+    if (cmd === 'help') return replyImageOnly(message, await renderHelpBluePng('eco'), [helpButtons('eco')]);
+    if (cmd === 'balance' || cmd === 'bal') return handleBalance(message);
+    if (cmd === 'deposit' || cmd === 'dep') return handleDeposit(message, args);
+    if (cmd === 'withdraw' || cmd === 'with') return handleWithdraw(message, args);
+    if (cmd === 'work') return handleWork(message);
+    if (cmd === 'daily') return handleDaily(message);
+    if (cmd === 'crime') return handleCrime(message);
+    if (cmd === 'mine') return handleMine(message);
+    if (cmd === 'fish') return handleFish(message);
+    if (cmd === 'gift') return handleGift(message, args);
+    if (cmd === 'rob') return handleRob(message);
+    if (cmd === 'hack') return handleHack(message);
+    if (cmd === 'heist') return handleHeist(message);
+    if (cmd === 'scratch') return handleScratch(message, args);
+    if (cmd === 'spin') return handleSpin(message, args);
+    if (cmd === 'duel') return handleDuel(message, args);
+    if (cmd === 'monopoly' || cmd === 'immo') return handleMonopoly(message, args);
+    if (cmd === 'crypto' || cmd === 'bourse') return handleCrypto(message, args);
+    if (cmd === 'blackjack' || cmd === 'bj') return handleBlackjack(message, args);
+    if (cmd === 'roulette' || cmd === 'rl') return handleRoulette(message, args);
+    if (cmd === 'slots' || cmd === 'slot') return handleSlots(message, args);
+    if (cmd === 'coinflip' || cmd === 'cf') return handleCoinflip(message, args);
+    if (cmd === 'dice') return handleDice(message, args);
+    if (cmd === 'crash') return handleCrash(message, args);
+    if (cmd === 'leaderboard' || cmd === 'lb' || cmd === 'top') { const entries = Object.entries(db.users).map(([id, usr]) => ({ name: usr.username || `Joueur_${id.slice(-4)}`, total: (usr.cash || 0) + (usr.bank || 0) })).sort((a, b) => b.total - a.total); return replyImageOnly(message, await renderLeaderboardBluePng(entries)); }
 });
-
+setInterval(() => { for (const sym of Object.keys(db.cryptos)) { const c = db.cryptos[sym], delta = 1 + ((Math.random() - 0.5) * 0.09); c.price = Math.max(10, Math.round(c.price * delta)); c.history = [...(c.history || []).slice(-11), c.price]; } saveData(); }, 600000);
+client.on('error', err => console.error('Erreur client Discord:', err.message));
+client.on('shardError', err => console.error('Erreur shard Discord:', err.message));
+client.on('shardDisconnect', (event, id) => { console.warn(`Shard ${id} déconnecté. Reconnexion...`); if (process.env.DISCORD_TOKEN) client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Reconnexion:', e.message)); });
+setInterval(() => { if (!client.isReady() && process.env.DISCORD_TOKEN) client.login(process.env.DISCORD_TOKEN).catch(e => console.error('Relance:', e.message)); }, 240000);
+process.on('unhandledRejection', reason => console.error('Unhandled Rejection:', reason));
+process.on('uncaughtException', err => console.error('Uncaught Exception:', err));
+client.once('clientReady', () => console.log(`Kyuro Casino v9.0 prêt : ${client.user.tag}`));
 client.login(process.env.DISCORD_TOKEN);
